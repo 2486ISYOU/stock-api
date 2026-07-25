@@ -10,7 +10,7 @@ import secrets
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.9")
+app = FastAPI(title="股佳寶", version="2.5")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -27,30 +27,6 @@ feature_cols = [
     'Oil_Price', 'Oil_Change_5D',
     'ES_Ret_1D', 'NQ_Ret_1D'
 ]
-
-def download_stock_data(ticker: str, period="3mo", interval="1d"):
-    """自動處理上市 (.TW) 與上櫃 (.TWO) 容錯下載，並完整標準化 OHLCV 欄位的核心輔助函式"""
-    ticker = ticker.strip().upper()
-    df = yf.download(ticker, period=period, interval=interval, auto_adjust=True, progress=False)
-    
-    if df.empty:
-        if ticker.endswith(".TW"):
-            alt_ticker = ticker[:-3] + ".TWO"
-            df = yf.download(alt_ticker, period=period, interval=interval, auto_adjust=True, progress=False)
-        elif ticker.endswith(".TWO"):
-            alt_ticker = ticker[:-4] + ".TW"
-            df = yf.download(alt_ticker, period=period, interval=interval, auto_adjust=True, progress=False)
-        elif "." not in ticker:
-            df = yf.download(ticker + ".TW", period=period, interval=interval, auto_adjust=True, progress=False)
-            if df.empty:
-                df = yf.download(ticker + ".TWO", period=period, interval=interval, auto_adjust=True, progress=False)
-                
-    if not df.empty:
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        df.columns = [str(c).capitalize() for c in df.columns]
-        
-    return df
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
@@ -191,8 +167,6 @@ def home(request: Request, user: str = Depends(verify_session)):
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <title>股佳寶 GoodJob - 頂級股市多空預測儀表板</title>
             <script src="https://cdn.tailwindcss.com"></script>
-            <!-- 引入 TradingView Lightweight Charts -->
-            <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
             <style>
                 .gold-text { color: #d4af37; }
                 .gold-border { border-color: #d4af37; }
@@ -227,7 +201,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                 <div id="contentArea"></div>
             </div>
 
-            <!-- AI 預測彈出視窗 Modal -->
+            <!-- 彈出互動視窗 Modal -->
             <div id="stockModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4">
                 <div class="bg-zinc-950 border gold-border w-full max-w-lg rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
                     <button onclick="closeModal()" class="absolute top-4 right-4 text-zinc-400 hover:text-white text-2xl font-bold cursor-pointer">&times;</button>
@@ -254,11 +228,11 @@ def home(request: Request, user: str = Depends(verify_session)):
                             { symbol: "2421.TW", name: "建準" }, { symbol: "3034.TW", name: "聯詠" }, { symbol: "2408.TW", name: "南亞科" },
                             { symbol: "2344.TW", name: "華邦電" }, { symbol: "2337.TW", name: "旺宏" }, { symbol: "6770.TW", name: "力積電" },
                             { symbol: "3037.TW", name: "欣興" }, { symbol: "3189.TW", name: "景碩" }, { symbol: "8046.TW", name: "南電" },
-                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TWO", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
+                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TW", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
                             { symbol: "3661.TW", name: "世芯-KY" }, { symbol: "3443.TW", name: "創意" }, { symbol: "5269.TW", name: "祥碩" },
                             { symbol: "4968.TW", name: "立積" }, { symbol: "2449.TW", name: "京元電子" }, { symbol: "6531.TW", name: "愛普*" },
                             { symbol: "3035.TW", name: "智原" }, { symbol: "6271.TW", name: "同欣電" }, { symbol: "8299.TW", name: "群聯" },
-                            { symbol: "4938.TW", name: "和碩" }, { symbol: "2324.TW", name: "仁寶" }, { symbol: "3293.TWO", name: "鈊象" },
+                            { symbol: "4938.TW", name: "和碩" }, { symbol: "2324.TW", name: "仁寶" }, { symbol: "3293.TW", name: "鈊象" },
                             { symbol: "3008.TW", name: "大立光" }, { symbol: "2379.TW", name: "瑞昱" }, { symbol: "2409.TW", name: "友達" },
                             { symbol: "3481.TW", name: "群創" }, { symbol: "4958.TW", name: "臻鼎-KY" }, { symbol: "6269.TW", name: "台郡" }
                         ]
@@ -333,6 +307,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                     }
                 ];
 
+                // 建立全域對照表方便尋找中文名稱
                 const stockNameMap = {};
                 categories.forEach(cat => {
                     cat.stocks.forEach(s => {
@@ -405,11 +380,11 @@ def home(request: Request, user: str = Depends(verify_session)):
                             <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border">
                                 <div class="flex justify-between items-center mb-4">
                                     <h2 class="text-lg sm:text-xl font-bold gold-text">📋 自選股 ${currentTab} 管理 (已加入 ${stocks.length}/50 檔)</h2>
-                                    <span class="text-xs text-zinc-400">即時日K線與多空預測</span>
+                                    <span class="text-xs text-zinc-400">點擊卡片以開啟詳情與預測</span>
                                 </div>
 
                                 <div class="flex gap-2 sm:gap-3 mb-6">
-                                    <input type="text" id="tickerInput" placeholder="輸入代號 (例: 2330.TW, NVDA, 5425.TWO)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-xs sm:text-sm">
+                                    <input type="text" id="tickerInput" placeholder="輸入代號 (例: 2330.TW, NVDA)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-xs sm:text-sm">
                                     <button onclick="addStock()" class="gold-bg text-black px-4 sm:px-5 py-2 rounded-lg font-bold text-xs sm:text-sm transition shadow cursor-pointer whitespace-nowrap">新增股票</button>
                                 </div>
 
@@ -429,6 +404,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                         return;
                     }
 
+                    // 批次取得即時股價
                     let priceData = {};
                     try {
                         const res = await fetch(`/prices/${stocks.join(',')}`);
@@ -441,120 +417,44 @@ def home(request: Request, user: str = Depends(verify_session)):
                     stocks.forEach((ticker, index) => {
                         const name = stockNameMap[ticker] || ticker;
                         const info = priceData[ticker];
-                        const price = info ? info.price : '查無報價';
+                        const price = info ? info.price : '載入中...';
                         const isUp = info ? info.is_up : true;
+                        // 若漲就用紅色顯示價格 (符合用戶指示)
                         const priceColor = isUp ? 'text-rose-500' : 'text-emerald-400';
 
                         const card = document.createElement('div');
-                        card.className = "bg-zinc-950 border gold-border p-4 rounded-xl flex flex-col justify-between shadow-lg relative";
+                        card.className = "bg-zinc-950 border gold-border p-4 rounded-xl flex flex-col justify-between hover:bg-zinc-900 transition cursor-pointer shadow-lg";
+                        card.onclick = () => openStockModal(ticker, name, price);
                         card.innerHTML = `
-                            <div class="flex justify-between items-start mb-2">
+                            <div class="flex justify-between items-start">
                                 <div>
                                     <div class="text-xs text-zinc-400">${ticker}</div>
-                                    <div class="text-base sm:text-lg font-bold text-white tracking-wide">${name}</div>
+                                    <div class="text-lg sm:text-xl font-bold text-white mt-0.5 tracking-wide">${name}</div>
                                 </div>
-                                <button onclick="removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold text-xl px-2 py-0.5 rounded cursor-pointer" title="刪除">&times;</button>
+                                <button onclick="event.stopPropagation(); removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold text-xl px-2 py-0.5 rounded" title="刪除">&times;</button>
                             </div>
-                            
-                            <!-- 內嵌於卡片內的 K 線圖容器 -->
-                            <div id="mini-chart-${index}" class="w-full h-32 bg-black rounded-lg border border-zinc-900 my-2 relative overflow-hidden flex items-center justify-center">
-                                <span class="text-[10px] text-zinc-500">載入 K 線中...</span>
-                            </div>
-
-                            <div class="flex justify-between items-center pt-2 border-t border-zinc-900">
+                            <div class="flex justify-between items-end mt-5 pt-3 border-t border-zinc-900">
                                 <div>
-                                    <span class="text-xs text-zinc-400">收盤價：</span>
-                                    <span class="text-sm sm:text-base font-bold ${priceColor}">${price}</span>
+                                    <span class="text-xs text-zinc-400">最新收盤價：</span>
+                                    <span class="text-base sm:text-lg font-bold ${priceColor}">${price}</span>
                                 </div>
-                                <button onclick="openPredictionModal('${ticker}', '${name}', '${price}')" class="text-xs gold-text font-bold px-3 py-1.5 rounded bg-black border gold-border hover:bg-[#d4af37] hover:text-black transition cursor-pointer">
-                                    🚀 AI 預測分析
-                                </button>
+                                <span class="text-xs gold-text font-bold px-2.5 py-1 rounded bg-black border gold-border">詳情與預測 ▶</span>
                             </div>
                         `;
                         container.appendChild(card);
                     });
-
-                    requestAnimationFrame(() => {
-                        stocks.forEach((ticker, index) => {
-                            loadMiniCandlestickChart(ticker, `mini-chart-${index}`);
-                        });
-                    });
                 }
 
-                async function loadMiniCandlestickChart(ticker, containerId) {
-                    const container = document.getElementById(containerId);
-                    if (!container) return;
-
-                    try {
-                        const res = await fetch(`/chart-data/${encodeURIComponent(ticker)}`);
-                        const data = await res.json();
-
-                        container.innerHTML = '';
-
-                        if (data.error || !data.candles || data.candles.length === 0) {
-                            container.innerHTML = '<span class="text-[10px] text-red-400">無法載入 K 線</span>';
-                            return;
-                        }
-
-                        const width = container.clientWidth || 280;
-                        const height = container.clientHeight || 128;
-
-                        const chart = LightweightCharts.createChart(container, {
-                            width: width,
-                            height: height,
-                            layout: {
-                                background: { type: 'solid', color: '#000000' },
-                                textColor: '#d4af37',
-                            },
-                            grid: {
-                                vertLines: { color: '#18181b' },
-                                horzLines: { color: '#18181b' },
-                            },
-                            timeScale: {
-                                borderColor: '#27272a',
-                                visible: false,
-                            },
-                            rightPriceScale: {
-                                borderColor: '#27272a',
-                            }
-                        });
-
-                        const candlestickSeries = chart.addCandlestickSeries({
-                            upColor: '#ef4444',
-                            downColor: '#10b981',
-                            borderVisible: false,
-                            wickUpColor: '#ef4444',
-                            wickDownColor: '#10b981',
-                        });
-
-                        candlestickSeries.setData(data.candles);
-                        chart.timeScale().fitContent();
-
-                        window.addEventListener('resize', () => {
-                            if (container.clientWidth > 0) {
-                                chart.applyOptions({ 
-                                    width: container.clientWidth,
-                                    height: container.clientHeight 
-                                });
-                            }
-                        });
-                    } catch (e) {
-                        if (container) container.innerHTML = '<span class="text-[10px] text-red-400">K線載入異常</span>';
-                    }
-                }
-
-                function openPredictionModal(ticker, name, price) {
+                function openStockModal(ticker, name, price) {
                     const modal = document.getElementById('stockModal');
                     const modalContent = document.getElementById('modalContent');
                     
                     modalContent.innerHTML = `
                         <div class="space-y-4">
-                            <div class="flex justify-between items-start border-b border-zinc-900 pb-3">
-                                <div>
-                                    <span class="text-xs text-zinc-400">${ticker}</span>
-                                    <h3 class="text-xl font-bold gold-text">${name}</h3>
-                                    <div class="text-sm text-zinc-300 mt-1">最新收盤價：<span class="font-bold text-white text-base">${price}</span></div>
-                                </div>
+                            <div>
+                                <span class="text-xs text-zinc-400">${ticker}</span>
+                                <h3 class="text-xl font-bold gold-text">${name}</h3>
+                                <div class="text-sm text-zinc-300 mt-1">最新收盤價：<span class="font-bold text-white text-base">${price}</span></div>
                             </div>
                             <div class="bg-black p-4 rounded-xl border border-zinc-900 text-center">
                                 <button onclick="runSinglePrediction('${ticker}', '${name}')" class="gold-bg text-black font-bold px-6 py-2.5 rounded-lg transition shadow-lg cursor-pointer text-sm w-full">
@@ -670,44 +570,12 @@ def home(request: Request, user: str = Depends(verify_session)):
                     await renderStocksCards(watchlists[currentTab]);
                 }
 
+                // 初始載入
                 renderContent();
             </script>
         </body>
     </html>
     """
-
-@app.get("/chart-data/{ticker}")
-def get_chart_data(ticker: str, user: str = Depends(verify_session)):
-    try:
-        df = download_stock_data(ticker, period="3mo", interval="1d")
-        if df.empty:
-            return {"candles": []}
-
-        if not all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
-            return {"candles": [], "error": "Missing OHLC columns"}
-
-        candles = []
-        for idx, row in df.iterrows():
-            date_str = idx.strftime('%Y-%m-%d')
-            try:
-                o = float(row['Open'])
-                h = float(row['High'])
-                l = float(row['Low'])
-                c = float(row['Close'])
-                if not (np.isnan(o) or np.isnan(h) or np.isnan(l) or np.isnan(c)):
-                    candles.append({
-                        "time": date_str,
-                        "open": round(o, 2),
-                        "high": round(h, 2),
-                        "low": round(l, 2),
-                        "close": round(c, 2)
-                    })
-            except Exception:
-                continue
-                
-        return {"candles": candles}
-    except Exception as e:
-        return {"candles": [], "error": str(e)}
 
 @app.get("/prices/{tickers}")
 def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
@@ -716,11 +584,15 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         if not ticker_list or ticker_list == ['']:
             return {"prices": {}}
         
+        data = yf.download(ticker_list, period="5d", interval="1d", auto_adjust=True, progress=False)
+        close_df = data['Close']
+        if isinstance(close_df, pd.Series):
+            close_df = close_df.to_frame(ticker_list[0])
+        
         res = {}
         for t in ticker_list:
-            df = download_stock_data(t, period="5d", interval="1d")
-            if not df.empty and 'Close' in df.columns:
-                s = df['Close'].dropna()
+            if t in close_df.columns:
+                s = close_df[t].dropna()
                 if len(s) >= 2:
                     curr = float(s.iloc[-1])
                     prev = float(s.iloc[-2])
@@ -745,21 +617,12 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         ticker_list = [t.strip().upper() for t in tickers.split(",")]
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
         
-        all_tickers = list(set(ticker_list + macro_tickers))
-        close_dict, high_dict, low_dict, volume_dict = {}, {}, {}, {}
+        all_data = yf.download(ticker_list + macro_tickers, period="6mo", interval="1d", auto_adjust=True, progress=False)
         
-        for t in all_tickers:
-            df = download_stock_data(t, period="6mo", interval="1d")
-            if not df.empty:
-                if 'Close' in df.columns: close_dict[t] = df['Close']
-                if 'High' in df.columns: high_dict[t] = df['High']
-                if 'Low' in df.columns: low_dict[t] = df['Low']
-                if 'Volume' in df.columns: volume_dict[t] = df['Volume']
-        
-        close_df = pd.DataFrame(close_dict).ffill().bfill()
-        high_df = pd.DataFrame(high_dict).ffill().bfill()
-        low_df = pd.DataFrame(low_dict).ffill().bfill()
-        volume_df = pd.DataFrame(volume_dict).ffill().bfill()
+        close_df = all_data['Close'].ffill().bfill()
+        high_df = all_data['High'].ffill().bfill()
+        low_df = all_data['Low'].ffill().bfill()
+        volume_df = all_data['Volume'].ffill().bfill()
         
         results = []
         
@@ -796,14 +659,14 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                                      abs(df['Low'] - df['Close'].shift(1))))
             df['ATR_14'] = tr.rolling(14).mean() / df['Close']
             
-            df['VIX_Level'] = close_df.get('^VIX', pd.Series(0, index=df.index))
-            df['VIX_Change_5D'] = close_df.get('^VIX', pd.Series(0, index=df.index)).pct_change(5)
-            df['SP500_Ret_5D'] = close_df.get('^GSPC', pd.Series(0, index=df.index)).pct_change(5)
-            df['TWII_Ret_5D'] = close_df.get('^TWII', pd.Series(0, index=df.index)).pct_change(5)
-            df['Oil_Price'] = close_df.get('CL=F', pd.Series(0, index=df.index))
-            df['Oil_Change_5D'] = close_df.get('CL=F', pd.Series(0, index=df.index)).pct_change(5)
-            df['ES_Ret_1D'] = close_df.get('ES=F', pd.Series(0, index=df.index)).pct_change(1)
-            df['NQ_Ret_1D'] = close_df.get('NQ=F', pd.Series(0, index=df.index)).pct_change(1)
+            df['VIX_Level'] = close_df['^VIX']
+            df['VIX_Change_5D'] = close_df['^VIX'].pct_change(5)
+            df['SP500_Ret_5D'] = close_df['^GSPC'].pct_change(5)
+            df['TWII_Ret_5D'] = close_df['^TWII'].pct_change(5)
+            df['Oil_Price'] = close_df['CL=F']
+            df['Oil_Change_5D'] = close_df['CL=F'].pct_change(5)
+            df['ES_Ret_1D'] = close_df['ES=F'].pct_change(1)
+            df['NQ_Ret_1D'] = close_df['NQ=F'].pct_change(1)
             
             latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
             latest_close = float(df.iloc[-1]['Close'])
