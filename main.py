@@ -10,7 +10,7 @@ import secrets
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.4")
+app = FastAPI(title="股佳寶", version="2.5")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -188,7 +188,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                     </div>
                 </header>
 
-                <!-- 分頁按鈕列 (自選股 1~4 + 專業選股專區) -->
+                <!-- 分頁按鈕列 -->
                 <div class="flex border-b border-zinc-800 mb-6 gap-3 sm:gap-6 overflow-x-auto pb-2 scrollbar-none">
                     <button onclick="switchTab(1)" id="tabBtn1" class="pb-2 font-semibold text-sm sm:text-lg tab-active transition cursor-pointer whitespace-nowrap">自選股 1</button>
                     <button onclick="switchTab(2)" id="tabBtn2" class="pb-2 font-semibold text-sm sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 2</button>
@@ -199,11 +199,13 @@ def home(request: Request, user: str = Depends(verify_session)):
 
                 <!-- 分頁內容區 -->
                 <div id="contentArea"></div>
+            </div>
 
-                <!-- 結果顯示區 (中文流暢解說報告) -->
-                <div id="resultSection" class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border hidden mt-6">
-                    <h3 class="text-lg sm:text-xl font-bold mb-4 gold-text flex items-center gap-2">📊 <span>多空 AI 分析解讀報告</span></h3>
-                    <div id="outputResult" class="space-y-4"></div>
+            <!-- 彈出互動視窗 Modal -->
+            <div id="stockModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4">
+                <div class="bg-zinc-950 border gold-border w-full max-w-lg rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
+                    <button onclick="closeModal()" class="absolute top-4 right-4 text-zinc-400 hover:text-white text-2xl font-bold cursor-pointer">&times;</button>
+                    <div id="modalContent"></div>
                 </div>
             </div>
 
@@ -215,7 +217,6 @@ def home(request: Request, user: str = Depends(verify_session)):
             <script>
                 let currentTab = 1;
 
-                // 完整涵蓋約 200 支熱門台美股與 ETF 標的清單
                 const categories = [
                     {
                         name: "🇹🇼 台股 - 半導體與電子零組件 (核心權值)",
@@ -287,7 +288,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                         ]
                     },
                     {
-                        name: "💳 美國 - 金融、消費與傳統巨頭",
+                        name: "💳 美國 - 金融, 消費與傳統巨頭",
                         stocks: [
                             { symbol: "JPM", name: "摩根大通" }, { symbol: "BRK-B", name: "波克夏海瑟威" }, { symbol: "V", name: "Visa" },
                             { symbol: "MA", name: "萬事達卡" }, { symbol: "BAC", name: "美國銀行" }, { symbol: "WMT", name: "沃爾瑪" },
@@ -296,7 +297,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                         ]
                     },
                     {
-                        name: "📈 熱門指數、ETF 與海外基金",
+                        name: "📈 熱門指數, ETF 與海外基金",
                         stocks: [
                             { symbol: "0050.TW", name: "元大台灣50" }, { symbol: "006208.TW", name: "富邦台50" }, { symbol: "00878.TW", name: "國泰永續高股息" },
                             { symbol: "0056.TW", name: "元大高股息" }, { symbol: "00919.TW", name: "群益台灣精選高息" }, { symbol: "00929.TW", name: "復華台灣科技優息" },
@@ -305,6 +306,14 @@ def home(request: Request, user: str = Depends(verify_session)):
                         ]
                     }
                 ];
+
+                // 建立全域對照表方便尋找中文名稱
+                const stockNameMap = {};
+                categories.forEach(cat => {
+                    cat.stocks.forEach(s => {
+                        stockNameMap[s.symbol.toUpperCase()] = s.name;
+                    });
+                });
 
                 function getWatchlists() {
                     let data = localStorage.getItem('gubao_watchlists');
@@ -333,10 +342,9 @@ def home(request: Request, user: str = Depends(verify_session)):
                     renderContent();
                 }
 
-                function renderContent() {
+                async function renderContent() {
                     const area = document.getElementById('contentArea');
                     if (currentTab === 'selector') {
-                        // 渲染專業選股分類專區 (包含完整標的)
                         let html = `
                             <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border space-y-6">
                                 <div>
@@ -366,14 +374,13 @@ def home(request: Request, user: str = Depends(verify_session)):
                         html += `</div>`;
                         area.innerHTML = html;
                     } else {
-                        // 渲染自選股 1~4 管理介面 (仿券商精緻卡片排版)
                         const watchlists = getWatchlists();
                         const stocks = watchlists[currentTab] || [];
                         area.innerHTML = `
                             <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border">
                                 <div class="flex justify-between items-center mb-4">
                                     <h2 class="text-lg sm:text-xl font-bold gold-text">📋 自選股 ${currentTab} 管理 (已加入 ${stocks.length}/50 檔)</h2>
-                                    <span class="text-xs text-zinc-400">點擊卡片即可進行 AI 預測</span>
+                                    <span class="text-xs text-zinc-400">點擊卡片以開啟詳情與預測</span>
                                 </div>
 
                                 <div class="flex gap-2 sm:gap-3 mb-6">
@@ -384,11 +391,11 @@ def home(request: Request, user: str = Depends(verify_session)):
                                 <div id="stockCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2 min-h-[140px] p-3 bg-black rounded-xl border border-zinc-900"></div>
                             </div>
                         `;
-                        renderStocksCards(stocks);
+                        await renderStocksCards(stocks);
                     }
                 }
 
-                function renderStocksCards(stocks) {
+                async function renderStocksCards(stocks) {
                     const container = document.getElementById('stockCardsGrid');
                     if (!container) return;
                     container.innerHTML = '';
@@ -397,25 +404,112 @@ def home(request: Request, user: str = Depends(verify_session)):
                         return;
                     }
 
+                    // 批次取得即時股價
+                    let priceData = {};
+                    try {
+                        const res = await fetch(`/prices/${stocks.join(',')}`);
+                        const data = await res.json();
+                        priceData = data.prices || {};
+                    } catch (e) {
+                        console.error("無法取得即時股價", e);
+                    }
+
                     stocks.forEach((ticker, index) => {
+                        const name = stockNameMap[ticker] || ticker;
+                        const info = priceData[ticker];
+                        const price = info ? info.price : '載入中...';
+                        const isUp = info ? info.is_up : true;
+                        // 若漲就用紅色顯示價格 (符合用戶指示)
+                        const priceColor = isUp ? 'text-rose-500' : 'text-emerald-400';
+
                         const card = document.createElement('div');
                         card.className = "bg-zinc-950 border gold-border p-4 rounded-xl flex flex-col justify-between hover:bg-zinc-900 transition cursor-pointer shadow-lg";
-                        card.onclick = () => runSinglePrediction(ticker);
+                        card.onclick = () => openStockModal(ticker, name, price);
                         card.innerHTML = `
                             <div class="flex justify-between items-start">
                                 <div>
-                                    <div class="text-xs text-zinc-400">自選標的</div>
-                                    <div class="text-lg sm:text-xl font-bold gold-text mt-0.5 tracking-wide">${ticker}</div>
+                                    <div class="text-xs text-zinc-400">${ticker}</div>
+                                    <div class="text-lg sm:text-xl font-bold text-white mt-0.5 tracking-wide">${name}</div>
                                 </div>
                                 <button onclick="event.stopPropagation(); removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold text-xl px-2 py-0.5 rounded" title="刪除">&times;</button>
                             </div>
                             <div class="flex justify-between items-end mt-5 pt-3 border-t border-zinc-900">
-                                <span class="text-xs text-zinc-400">點擊以執行 AI 多空預測</span>
-                                <span class="text-xs gold-text font-bold px-2.5 py-1 rounded bg-black border gold-border">▶ 預測分析</span>
+                                <div>
+                                    <span class="text-xs text-zinc-400">最新收盤價：</span>
+                                    <span class="text-base sm:text-lg font-bold ${priceColor}">${price}</span>
+                                </div>
+                                <span class="text-xs gold-text font-bold px-2.5 py-1 rounded bg-black border gold-border">詳情與預測 ▶</span>
                             </div>
                         `;
                         container.appendChild(card);
                     });
+                }
+
+                function openStockModal(ticker, name, price) {
+                    const modal = document.getElementById('stockModal');
+                    const modalContent = document.getElementById('modalContent');
+                    
+                    modalContent.innerHTML = `
+                        <div class="space-y-4">
+                            <div>
+                                <span class="text-xs text-zinc-400">${ticker}</span>
+                                <h3 class="text-xl font-bold gold-text">${name}</h3>
+                                <div class="text-sm text-zinc-300 mt-1">最新收盤價：<span class="font-bold text-white text-base">${price}</span></div>
+                            </div>
+                            <div class="bg-black p-4 rounded-xl border border-zinc-900 text-center">
+                                <button onclick="runSinglePrediction('${ticker}', '${name}')" class="gold-bg text-black font-bold px-6 py-2.5 rounded-lg transition shadow-lg cursor-pointer text-sm w-full">
+                                    🚀 執行 AI 多空預測分析
+                                </button>
+                            </div>
+                            <div id="modalPredictionResult" class="space-y-3"></div>
+                        </div>
+                    `;
+                    modal.classList.remove('hidden');
+                }
+
+                function closeModal() {
+                    document.getElementById('stockModal').classList.add('hidden');
+                }
+
+                async function runSinglePrediction(ticker, name) {
+                    const output = document.getElementById('modalPredictionResult');
+                    output.innerHTML = '<div class="text-zinc-400 text-xs py-4 text-center">AI 模型運算分析中，請稍候...</div>';
+
+                    try {
+                        const response = await fetch(`/predict/${encodeURIComponent(ticker)}`);
+                        const data = await response.json();
+                        
+                        let htmlContent = '';
+                        if (data.predictions && data.predictions.length > 0) {
+                            data.predictions.forEach(item => {
+                                if (item.error) {
+                                    htmlContent += `<div class="p-3 rounded-lg bg-black border border-red-900 text-red-400 text-xs"><b>${item.ticker}</b>：${item.error}</div>`;
+                                } else {
+                                    const maxColor = item.predicted_max_return_pct >= 0 ? 'text-rose-500' : 'text-emerald-400';
+                                    const minColor = item.predicted_min_return_pct >= 0 ? 'text-rose-500' : 'text-emerald-400';
+                                    
+                                    htmlContent += `
+                                        <div class="p-4 rounded-xl bg-black border gold-border space-y-2">
+                                            <div class="flex justify-between items-center border-b border-zinc-900 pb-2">
+                                                <span class="font-bold gold-text">${name} (${item.ticker})</span>
+                                                <span class="text-xs text-zinc-400">基準日期：${item.date}</span>
+                                            </div>
+                                            <p class="text-xs sm:text-sm text-zinc-300 leading-relaxed pt-1">
+                                                最新收盤價為 <span class="font-bold text-white">${item.latest_close}</span>。
+                                                經模型預估，在未來 2 個交易日內，向上最大可能漲幅約為 <span class="${maxColor} font-bold">+${item.predicted_max_return_pct}%</span>，推估高點目標價約落在 <span class="${maxColor} font-bold">${item.estimated_high_price}</span>；
+                                                向下風險防守價位則預估約為 <span class="${minColor} font-bold">${item.predicted_min_return_pct}%</span>，下檔支撐約落在 <span class="${minColor} font-bold">${item.estimated_low_price}</span>。
+                                            </p>
+                                        </div>
+                                    `;
+                                }
+                            });
+                        } else {
+                            htmlContent = '<div class="text-zinc-400 text-xs">無法取得預測資料。</div>';
+                        }
+                        output.innerHTML = htmlContent;
+                    } catch (e) {
+                        output.innerHTML = '<div class="text-red-400 text-xs">預測請求失敗，請稍後再試。</div>';
+                    }
                 }
 
                 function promptAddStock(symbol, name) {
@@ -445,7 +539,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                     alert(`成功將 ${symbol} (${name}) 加入「自選股 ${targetTab}」！`);
                 }
 
-                function addStock() {
+                async function addStock() {
                     const input = document.getElementById('tickerInput');
                     const ticker = input.value.trim().toUpperCase();
                     if (!ticker) return;
@@ -466,64 +560,14 @@ def home(request: Request, user: str = Depends(verify_session)):
                     watchlists[currentTab] = stocks;
                     saveWatchlists(watchlists);
                     input.value = '';
-                    renderStocksCards(stocks);
+                    await renderStocksCards(stocks);
                 }
 
-                function removeStock(index) {
+                async function removeStock(index) {
                     let watchlists = getWatchlists();
                     watchlists[currentTab].splice(index, 1);
                     saveWatchlists(watchlists);
-                    renderStocksCards(watchlists[currentTab]);
-                }
-
-                async function runSinglePrediction(ticker) {
-                    const resultSec = document.getElementById('resultSection');
-                    const output = document.getElementById('outputResult');
-                    
-                    resultSec.classList.remove('hidden');
-                    output.innerHTML = '<div class="text-zinc-400 text-sm py-4 text-center">AI 模型運算分析中，請稍候...</div>';
-                    resultSec.scrollIntoView({ behavior: 'smooth' });
-
-                    try {
-                        const response = await fetch(`/predict/${encodeURIComponent(ticker)}`);
-                        const data = await response.json();
-                        
-                        let htmlContent = '';
-                        if (data.predictions && data.predictions.length > 0) {
-                            data.predictions.forEach(item => {
-                                if (item.error) {
-                                    htmlContent += `
-                                        <div class="p-4 rounded-xl bg-black border border-red-900 text-red-400 text-sm">
-                                            <b>標的 ${item.ticker}</b>：${item.error}
-                                        </div>
-                                    `;
-                                } else {
-                                    const maxColor = item.predicted_max_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
-                                    const minColor = item.predicted_min_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
-                                    
-                                    htmlContent += `
-                                        <div class="p-5 rounded-xl bg-black border gold-border space-y-2">
-                                            <div class="flex justify-between items-center border-b border-zinc-900 pb-2">
-                                                <span class="text-lg font-bold gold-text">${item.ticker}</span>
-                                                <span class="text-xs text-zinc-400">基準日期：${item.date}</span>
-                                            </div>
-                                            <p class="text-sm text-zinc-300 leading-relaxed pt-1">
-                                                最新收盤價為 <span class="font-bold text-white text-base">${item.latest_close}</span>。
-                                                經模型預估，在未來 2 個交易日內，向上最大可能漲幅約為 <span class="${maxColor} font-bold">+${item.predicted_max_return_pct}%</span>，推估高點目標價約落在 <span class="${maxColor} font-bold">${item.estimated_high_price}</span>；
-                                                向下風險防守價位則預估約為 <span class="${minColor} font-bold">${item.predicted_min_return_pct}%</span>，下檔支撐約落在 <span class="${minColor} font-bold">${item.estimated_low_price}</span>。
-                                            </p>
-                                        </div>
-                                    `;
-                                }
-                            });
-                        } else {
-                            htmlContent = '<div class="text-zinc-400 text-sm">無法取得預測資料。</div>';
-                        }
-                        
-                        output.innerHTML = htmlContent;
-                    } catch (e) {
-                        output.innerHTML = '<div class="text-red-400 text-sm">預測請求失敗，請稍後再試。</div>';
-                    }
+                    await renderStocksCards(watchlists[currentTab]);
                 }
 
                 // 初始載入
@@ -532,6 +576,40 @@ def home(request: Request, user: str = Depends(verify_session)):
         </body>
     </html>
     """
+
+@app.get("/prices/{tickers}")
+def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
+    try:
+        ticker_list = [t.strip().upper() for t in tickers.split(",")]
+        if not ticker_list or ticker_list == ['']:
+            return {"prices": {}}
+        
+        data = yf.download(ticker_list, period="5d", interval="1d", auto_adjust=True, progress=False)
+        close_df = data['Close']
+        if isinstance(close_df, pd.Series):
+            close_df = close_df.to_frame(ticker_list[0])
+        
+        res = {}
+        for t in ticker_list:
+            if t in close_df.columns:
+                s = close_df[t].dropna()
+                if len(s) >= 2:
+                    curr = float(s.iloc[-1])
+                    prev = float(s.iloc[-2])
+                    change = curr - prev
+                    res[t] = {
+                        "price": round(curr, 2),
+                        "is_up": change >= 0
+                    }
+                elif len(s) == 1:
+                    curr = float(s.iloc[-1])
+                    res[t] = {
+                        "price": round(curr, 2),
+                        "is_up": True
+                    }
+        return {"prices": res}
+    except Exception as e:
+        return {"prices": {}, "error": str(e)}
 
 @app.get("/predict/{tickers}")
 def predict_stocks(tickers: str, user: str = Depends(verify_session)):
