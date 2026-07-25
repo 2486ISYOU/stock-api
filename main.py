@@ -10,7 +10,7 @@ import secrets
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.5")
+app = FastAPI(title="股佳寶", version="2.6")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -167,6 +167,8 @@ def home(request: Request, user: str = Depends(verify_session)):
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <title>股佳寶 GoodJob - 頂級股市多空預測儀表板</title>
             <script src="https://cdn.tailwindcss.com"></script>
+            <!-- 引入 TradingView Lightweight Charts 用於繪製專業 K 線圖 -->
+            <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
             <style>
                 .gold-text { color: #d4af37; }
                 .gold-border { border-color: #d4af37; }
@@ -203,7 +205,7 @@ def home(request: Request, user: str = Depends(verify_session)):
 
             <!-- 彈出互動視窗 Modal -->
             <div id="stockModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4">
-                <div class="bg-zinc-950 border gold-border w-full max-w-lg rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
+                <div class="bg-zinc-950 border gold-border w-full max-w-2xl rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
                     <button onclick="closeModal()" class="absolute top-4 right-4 text-zinc-400 hover:text-white text-2xl font-bold cursor-pointer">&times;</button>
                     <div id="modalContent"></div>
                 </div>
@@ -307,7 +309,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                     }
                 ];
 
-                // 建立全域對照表方便尋找中文名稱
                 const stockNameMap = {};
                 categories.forEach(cat => {
                     cat.stocks.forEach(s => {
@@ -380,7 +381,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                             <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border">
                                 <div class="flex justify-between items-center mb-4">
                                     <h2 class="text-lg sm:text-xl font-bold gold-text">📋 自選股 ${currentTab} 管理 (已加入 ${stocks.length}/50 檔)</h2>
-                                    <span class="text-xs text-zinc-400">點擊卡片以開啟詳情與預測</span>
+                                    <span class="text-xs text-zinc-400">點擊卡片以開啟日K線詳情與預測</span>
                                 </div>
 
                                 <div class="flex gap-2 sm:gap-3 mb-6">
@@ -404,7 +405,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                         return;
                     }
 
-                    // 批次取得即時股價
                     let priceData = {};
                     try {
                         const res = await fetch(`/prices/${stocks.join(',')}`);
@@ -419,7 +419,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                         const info = priceData[ticker];
                         const price = info ? info.price : '載入中...';
                         const isUp = info ? info.is_up : true;
-                        // 若漲就用紅色顯示價格 (符合用戶指示)
                         const priceColor = isUp ? 'text-rose-500' : 'text-emerald-400';
 
                         const card = document.createElement('div');
@@ -438,24 +437,38 @@ def home(request: Request, user: str = Depends(verify_session)):
                                     <span class="text-xs text-zinc-400">最新收盤價：</span>
                                     <span class="text-base sm:text-lg font-bold ${priceColor}">${price}</span>
                                 </div>
-                                <span class="text-xs gold-text font-bold px-2.5 py-1 rounded bg-black border gold-border">詳情與預測 ▶</span>
+                                <span class="text-xs gold-text font-bold px-2.5 py-1 rounded bg-black border gold-border">查看日K與預測 ▶</span>
                             </div>
                         `;
                         container.appendChild(card);
                     });
                 }
 
-                function openStockModal(ticker, name, price) {
+                async function openStockModal(ticker, name, price) {
                     const modal = document.getElementById('stockModal');
                     const modalContent = document.getElementById('modalContent');
                     
                     modalContent.innerHTML = `
                         <div class="space-y-4">
-                            <div>
-                                <span class="text-xs text-zinc-400">${ticker}</span>
-                                <h3 class="text-xl font-bold gold-text">${name}</h3>
-                                <div class="text-sm text-zinc-300 mt-1">最新收盤價：<span class="font-bold text-white text-base">${price}</span></div>
+                            <div class="flex justify-between items-start border-b border-zinc-900 pb-3">
+                                <div>
+                                    <span class="text-xs text-zinc-400">${ticker}</span>
+                                    <h3 class="text-xl font-bold gold-text">${name}</h3>
+                                    <div class="text-sm text-zinc-300 mt-1">最新收盤價：<span class="font-bold text-white text-base">${price}</span></div>
+                                </div>
                             </div>
+
+                            <!-- 日K線圖表區塊 -->
+                            <div>
+                                <div class="text-xs font-bold text-zinc-400 mb-1 flex justify-between items-center">
+                                    <span>📊 最近日K線走勢圖</span>
+                                    <span class="text-[10px] text-zinc-500">TradingView Chart</span>
+                                </div>
+                                <div id="chartContainer" class="w-full h-64 bg-black rounded-xl border border-zinc-900 relative overflow-hidden flex items-center justify-center">
+                                    <span class="text-xs text-zinc-500">載入 K 線圖表中...</span>
+                                </div>
+                            </div>
+
                             <div class="bg-black p-4 rounded-xl border border-zinc-900 text-center">
                                 <button onclick="runSinglePrediction('${ticker}', '${name}')" class="gold-bg text-black font-bold px-6 py-2.5 rounded-lg transition shadow-lg cursor-pointer text-sm w-full">
                                     🚀 執行 AI 多空預測分析
@@ -465,6 +478,66 @@ def home(request: Request, user: str = Depends(verify_session)):
                         </div>
                     `;
                     modal.classList.remove('hidden');
+                    
+                    // 非同步載入並渲染日K線圖
+                    await loadCandlestickChart(ticker);
+                }
+
+                async function loadCandlestickChart(ticker) {
+                    try {
+                        const res = await fetch(`/chart-data/${encodeURIComponent(ticker)}`);
+                        const data = await res.json();
+                        const container = document.getElementById('chartContainer');
+                        if (!container) return;
+
+                        container.innerHTML = ''; // 清除 loading 文字
+
+                        if (data.error || !data.candles || data.candles.length === 0) {
+                            container.innerHTML = '<span class="text-xs text-red-400">無法載入 K 線圖資料</span>';
+                            return;
+                        }
+
+                        const chart = LightweightCharts.createChart(container, {
+                            width: container.clientWidth,
+                            height: 256,
+                            layout: {
+                                background: { type: 'solid', color: '#000000' },
+                                textColor: '#d4af37',
+                            },
+                            grid: {
+                                vertLines: { color: '#18181b' },
+                                horzLines: { color: '#18181b' },
+                            },
+                            timeScale: {
+                                borderColor: '#27272a',
+                            },
+                            rightPriceScale: {
+                                borderColor: '#27272a',
+                            }
+                        });
+
+                        const candlestickSeries = chart.addCandlestickSeries({
+                            upColor: '#ef4444',      // 紅漲
+                            downColor: '#10b981',    // 綠跌
+                            borderVisible: false,
+                            wickUpColor: '#ef4444',
+                            wickDownColor: '#10b981',
+                        });
+
+                        candlestickSeries.setData(data.candles);
+                        chart.timeScale().fitContent();
+
+                        // RWD 自適應縮放
+                        window.addEventListener('resize', () => {
+                            if (container.clientWidth > 0) {
+                                chart.applyOptions({ width: container.clientWidth });
+                            }
+                        });
+                    } catch (e) {
+                        console.error("K線圖載入失敗", e);
+                        const container = document.getElementById('chartContainer');
+                        if (container) container.innerHTML = '<span class="text-xs text-red-400">K線圖載入異常</span>';
+                    }
                 }
 
                 function closeModal() {
@@ -570,12 +643,45 @@ def home(request: Request, user: str = Depends(verify_session)):
                     await renderStocksCards(watchlists[currentTab]);
                 }
 
-                // 初始載入
                 renderContent();
             </script>
         </body>
     </html>
     """
+
+@app.get("/chart-data/{ticker}")
+def get_chart_data(ticker: str, user: str = Depends(verify_session)):
+    try:
+        df = yf.download(ticker.strip().upper(), period="3mo", interval="1d", auto_adjust=True, progress=False)
+        if df.empty:
+            return {"candles": []}
+        
+        # 確保 MultiIndex 欄位扁平化處理
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        candles = []
+        for idx, row in df.iterrows():
+            date_str = idx.strftime('%Y-%m-%d')
+            try:
+                o = float(row['Open'])
+                h = float(row['High'])
+                l = float(row['Low'])
+                c = float(row['Close'])
+                if not (np.isnan(o) or np.isnan(h) or np.isnan(l) or np.isnan(c)):
+                    candles.append({
+                        "time": date_str,
+                        "open": round(o, 2),
+                        "high": round(h, 2),
+                        "low": round(l, 2),
+                        "close": round(c, 2)
+                    })
+            except Exception:
+                continue
+                
+        return {"candles": candles}
+    except Exception as e:
+        return {"candles": [], "error": str(e)}
 
 @app.get("/prices/{tickers}")
 def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
@@ -588,6 +694,8 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         close_df = data['Close']
         if isinstance(close_df, pd.Series):
             close_df = close_df.to_frame(ticker_list[0])
+        if isinstance(close_df.columns, pd.MultiIndex):
+            close_df.columns = close_df.columns.get_level_values(0)
         
         res = {}
         for t in ticker_list:
@@ -623,6 +731,15 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         high_df = all_data['High'].ffill().bfill()
         low_df = all_data['Low'].ffill().bfill()
         volume_df = all_data['Volume'].ffill().bfill()
+        
+        if isinstance(close_df.columns, pd.MultiIndex):
+            close_df.columns = close_df.columns.get_level_values(0)
+        if isinstance(high_df.columns, pd.MultiIndex):
+            high_df.columns = high_df.columns.get_level_values(0)
+        if isinstance(low_df.columns, pd.MultiIndex):
+            low_df.columns = low_df.columns.get_level_values(0)
+        if isinstance(volume_df.columns, pd.MultiIndex):
+            volume_df.columns = volume_df.columns.get_level_values(0)
         
         results = []
         
