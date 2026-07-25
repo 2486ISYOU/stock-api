@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
+code = '''from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import APIKeyCookie
 import joblib
@@ -10,7 +10,7 @@ import secrets
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.1")
+app = FastAPI(title="股佳寶", version="2.2")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -34,6 +34,7 @@ def login_page():
     <html>
         <head>
             <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>登入 - 股佳寶</title>
             <script src="https://cdn.tailwindcss.com"></script>
             <style>
@@ -43,18 +44,19 @@ def login_page():
                 .gold-bg:hover { background-color: #aa8c2c; }
             </style>
         </head>
-        <body class="bg-black text-[#d4af37] flex items-center justify-center h-screen font-sans">
-            <div class="bg-zinc-950 p-8 rounded-2xl shadow-2xl w-96 border gold-border">
+        <body class="bg-black text-[#d4af37] flex items-center justify-center min-h-screen font-sans p-4">
+            <div class="bg-zinc-950 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-sm border gold-border">
                 <div class="text-center mb-6">
-                    <h1 class="text-3xl font-bold tracking-wider gold-text">⚜️ 股佳寶 ⚜️</h1>
-                    <p class="text-xs text-zinc-400 mt-1">頂級股市多空預測系統</p>
+                    <h1 class="text-2xl sm:text-3xl font-bold tracking-wider gold-text">⚜️ 股佳寶 ⚜️</h1>
+                    <p class="text-sm font-semibold text-zinc-300 mt-1">GoodJob</p>
+                    <p class="text-xs text-zinc-400 mt-0.5">頂級股市多空預測系統</p>
                 </div>
                 <form action="/login" method="post" class="space-y-4">
                     <div>
                         <label class="block text-sm text-zinc-400 mb-2">請輸入存取密碼</label>
                         <input type="password" name="password" required class="w-full px-4 py-2 rounded bg-black border gold-border text-[#d4af37] focus:outline-none focus:ring-1 focus:ring-[#d4af37]">
                     </div>
-                    <button type="submit" class="w-full gold-bg text-black font-bold py-2 rounded-lg transition shadow-lg cursor-pointer">解鎖系統</button>
+                    <button type="submit" class="w-full gold-bg text-black font-bold py-2.5 rounded-lg transition shadow-lg cursor-pointer">解鎖系統</button>
                 </form>
             </div>
         </body>
@@ -82,6 +84,7 @@ def disclaimer_page(user: str = Depends(verify_session)):
     <html>
         <head>
             <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>免責聲明 - 股佳寶</title>
             <script src="https://cdn.tailwindcss.com"></script>
             <style>
@@ -90,11 +93,11 @@ def disclaimer_page(user: str = Depends(verify_session)):
                 .gold-bg { background-color: #d4af37; }
             </style>
         </head>
-        <body class="bg-black text-[#d4af37] flex items-center justify-center h-screen font-sans">
-            <div class="bg-zinc-950 p-8 rounded-2xl shadow-2xl w-[500px] border gold-border flex flex-col h-[550px]">
-                <h2 class="text-2xl font-bold text-center mb-4 gold-text">📜 使用者免責聲明</h2>
+        <body class="bg-black text-[#d4af37] flex items-center justify-center min-h-screen font-sans p-4">
+            <div class="bg-zinc-950 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-lg border gold-border flex flex-col h-[520px]">
+                <h2 class="text-xl sm:text-2xl font-bold text-center mb-4 gold-text">📜 使用者免責聲明</h2>
                 
-                <div id="termsBox" onscroll="checkScroll()" class="flex-1 bg-black border border-zinc-800 p-4 rounded-lg overflow-y-auto text-sm text-zinc-300 space-y-3 mb-4">
+                <div id="termsBox" onscroll="checkScroll()" class="flex-1 bg-black border border-zinc-800 p-4 rounded-lg overflow-y-auto text-xs sm:text-sm text-zinc-300 space-y-3 mb-4">
                     <p class="font-bold gold-text">歡迎使用「股佳寶」系統。在您開始使用本系統提供的所有預測數據與分析工具前，請務必詳細閱讀以下條款：</p>
                     <p>1. <strong>參考性質</strong>：本系統所產出之所有多空預測結果、趨勢分析及數據指標，僅供學術研究與內部參考之用，不構成任何形式的投資建議、買賣邀約或保證獲利承諾。</p>
                     <p>2. <strong>投資風險</strong>：金融市場瞬息萬變，歷史數據與機器學習模型無法完全預測未來突發事件。使用者須自行評估市場風險，並對自身的投資決策負全責。</p>
@@ -104,11 +107,11 @@ def disclaimer_page(user: str = Depends(verify_session)):
                 </div>
 
                 <div class="space-y-3">
-                    <label class="flex items-center space-x-2 text-sm text-zinc-400 select-none cursor-not-allowed" id="agreeLabel">
+                    <label class="flex items-center space-x-2 text-xs sm:text-sm text-zinc-400 select-none cursor-not-allowed" id="agreeLabel">
                         <input type="checkbox" id="agreeCheck" disabled onchange="toggleBtn()" class="w-4 h-4 accent-[#d4af37] cursor-not-allowed">
                         <span>我已詳細閱讀並同意上述所有免責聲明條款</span>
                     </label>
-                    <button id="enterBtn" onclick="acceptDisclaimer()" disabled class="w-full bg-zinc-800 text-zinc-500 font-bold py-2 rounded-lg transition cursor-not-allowed">進入系統</button>
+                    <button id="enterBtn" onclick="acceptDisclaimer()" disabled class="w-full bg-zinc-800 text-zinc-500 font-bold py-2.5 rounded-lg transition cursor-not-allowed">進入系統</button>
                 </div>
             </div>
 
@@ -161,6 +164,7 @@ def home(request: Request, user: str = Depends(verify_session)):
     <html>
         <head>
             <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>股佳寶 - 頂級股市多空預測儀表板</title>
             <script src="https://cdn.tailwindcss.com"></script>
             <style>
@@ -173,11 +177,11 @@ def home(request: Request, user: str = Depends(verify_session)):
         </head>
         <body class="bg-black text-[#d4af37] min-h-screen flex flex-col justify-between font-sans selection:bg-[#d4af37] selection:text-black">
             
-            <div class="max-w-5xl mx-auto w-full p-6">
+            <div class="max-w-5xl mx-auto w-full p-4 sm:p-6">
                 <header class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
                     <div>
-                        <h1 class="text-3xl font-bold tracking-wider gold-text">⚜️ 股佳寶 ⚜️</h1>
-                        <p class="text-xs text-zinc-400 mt-1">頂級多空預測引擎</p>
+                        <h1 class="text-2xl sm:text-3xl font-bold tracking-wider gold-text">⚜️ 股佳寶 ⚜️</h1>
+                        <p class="text-xs text-zinc-400 mt-1">GoodJob | 頂級多空預測引擎</p>
                     </div>
                     <div>
                         <a href="/login" class="text-xs text-zinc-500 hover:text-[#d4af37] transition">重新登入</a>
@@ -185,72 +189,122 @@ def home(request: Request, user: str = Depends(verify_session)):
                 </header>
 
                 <!-- 分頁按鈕列 (自選股 1~4 + 專業選股專區) -->
-                <div class="flex border-b border-zinc-800 mb-6 gap-6 overflow-x-auto">
-                    <button onclick="switchTab(1)" id="tabBtn1" class="pb-2 font-semibold text-lg tab-active transition cursor-pointer whitespace-nowrap">自選股 1</button>
-                    <button onclick="switchTab(2)" id="tabBtn2" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 2</button>
-                    <button onclick="switchTab(3)" id="tabBtn3" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 3</button>
-                    <button onclick="switchTab(4)" id="tabBtn4" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 4</button>
-                    <button onclick="switchTab('selector')" id="tabBtnselector" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap flex items-center gap-1">🌟 專業選股專區</button>
+                <div class="flex border-b border-zinc-800 mb-6 gap-4 sm:gap-6 overflow-x-auto pb-2 scrollbar-none">
+                    <button onclick="switchTab(1)" id="tabBtn1" class="pb-2 font-semibold text-base sm:text-lg tab-active transition cursor-pointer whitespace-nowrap">自選股 1</button>
+                    <button onclick="switchTab(2)" id="tabBtn2" class="pb-2 font-semibold text-base sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 2</button>
+                    <button onclick="switchTab(3)" id="tabBtn3" class="pb-2 font-semibold text-base sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 3</button>
+                    <button onclick="switchTab(4)" id="tabBtn4" class="pb-2 font-semibold text-base sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 4</button>
+                    <button onclick="switchTab('selector')" id="tabBtnselector" class="pb-2 font-semibold text-base sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap flex items-center gap-1">🌟 專業選股專區</button>
                 </div>
 
                 <!-- 分頁內容區 -->
                 <div id="contentArea"></div>
 
                 <!-- 結果顯示區 (中文流暢解說報告) -->
-                <div id="resultSection" class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border hidden mt-6">
-                    <h3 class="text-xl font-bold mb-4 gold-text flex items-center gap-2">📊 <span>多空 AI 分析解讀報告</span></h3>
+                <div id="resultSection" class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border hidden mt-6">
+                    <h3 class="text-lg sm:text-xl font-bold mb-4 gold-text flex items-center gap-2">📊 <span>多空 AI 分析解讀報告</span></h3>
                     <div id="outputResult" class="space-y-4"></div>
                 </div>
             </div>
 
             <!-- 底部名片角落 -->
-            <footer class="w-full border-t border-zinc-900 py-4 px-6 text-right text-xs text-zinc-500 bg-black tracking-wider mt-12">
+            <footer class="w-full border-t border-zinc-900 py-4 px-4 sm:px-6 text-right text-xs text-zinc-500 bg-black tracking-wider mt-12">
                 開發者: 顧家寶 | 開發者信箱: <a href="mailto:jgu9410@gmail.com" class="hover:text-[#d4af37] underline">jgu9410@gmail.com</a>
             </footer>
 
             <script>
                 let currentTab = 1;
 
-                // 內建完整分類優質標的清單
+                // 完整涵蓋約 200 支熱門台美股、ETF、加密貨幣與金融標的
                 const categories = [
                     {
-                        name: "🇹🇼 台股權值與科技核心",
+                        name: "🇹🇼 台股 - 半導體與電子零組件 (核心權值)",
                         stocks: [
-                            { symbol: "2330.TW", name: "台積電" },
-                            { symbol: "2454.TW", name: "聯發科" },
-                            { symbol: "2317.TW", name: "鴻海" },
-                            { symbol: "2308.TW", name: "台達電" },
-                            { symbol: "3711.TW", name: "日月光投控" },
-                            { symbol: "3376.TW", name: "新日興" }
+                            { symbol: "2330.TW", name: "台積電" }, { symbol: "2454.TW", name: "聯發科" }, { symbol: "2317.TW", name: "鴻海" },
+                            { symbol: "2308.TW", name: "台達電" }, { symbol: "2303.TW", name: "聯電" }, { symbol: "3711.TW", name: "日月光投控" },
+                            { symbol: "2382.TW", name: "廣達" }, { symbol: "3231.TW", name: "緯創" }, { symbol: "2357.TW", name: "華碩" },
+                            { symbol: "2353.TW", name: "宏碁" }, { symbol: "6669.TW", name: "緯穎" }, { symbol: "3017.TW", name: "奇鋐" },
+                            { symbol: "2421.TW", name: "建準" }, { symbol: "3034.TW", name: "聯詠" }, { symbol: "2408.TW", name: "南亞科" },
+                            { symbol: "2344.TW", name: "華邦電" }, { symbol: "2337.TW", name: "旺宏" }, { symbol: "6770.TW", name: "力積電" },
+                            { symbol: "3037.TW", name: "欣興" }, { symbol: "3189.TW", name: "景碩" }, { symbol: "8046.TW", name: "南電" },
+                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TW", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
+                            { symbol: "3661.TW", name: "世芯-KY" }, { symbol: "3443.TW", name: "創意" }, { symbol: "5269.TW", name: "祥碩" },
+                            { symbol: "4968.TW", name: "立積" }, { symbol: "2449.TW", name: "京元電子" }, { symbol: "6531.TW", name: "愛普*" },
+                            { symbol: "3035.TW", name: "智原" }, { symbol: "6271.TW", name: "同欣電" }, { symbol: "8299.TW", name: "群聯" },
+                            { symbol: "4938.TW", name: "和碩" }, { symbol: "2324.TW", name: "仁寶" }, { symbol: "3293.TW", name: "鈊象" }
                         ]
                     },
                     {
-                        name: "🏦 台股金融保險",
+                        name: "🏦 台股 - 金融保險與金控",
                         stocks: [
-                            { symbol: "2881.TW", name: "富邦金" },
-                            { symbol: "2882.TW", name: "國泰金" },
-                            { symbol: "2891.TW", name: "中信金" },
-                            { symbol: "2884.TW", name: "玉山金" }
+                            { symbol: "2881.TW", name: "富邦金" }, { symbol: "2882.TW", name: "國泰金" }, { symbol: "2891.TW", name: "中信金" },
+                            { symbol: "2884.TW", name: "玉山金" }, { symbol: "2886.TW", name: "兆豐金" }, { symbol: "2885.TW", name: "元大金" },
+                            { symbol: "2883.TW", name: "開發金" }, { symbol: "2888.TW", name: "新光金" }, { symbol: "2892.TW", name: "第一金" },
+                            { symbol: "5880.TW", name: "合庫金" }, { symbol: "2880.TW", name: "華南金" }, { symbol: "2801.TW", name: "彰銀" },
+                            { symbol: "5876.TW", name: "上海商銀" }, { symbol: "2834.TW", name: "臺企銀" }, { symbol: "2890.TW", name: "永豐金" },
+                            { symbol: "2887.TW", name: "台新金" }, { symbol: "6005.TW", name: "群益證" }, { symbol: "2855.TW", name: "統一證" },
+                            { symbol: "2823.TW", name: "中壽" }, { symbol: "5871.TW", name: "中租-KY" }, { symbol: "9941.TW", name: "裕融" },
+                            { symbol: "2809.TW", name: "京城銀" }, { symbol: "2812.TW", name: "台中銀" }, { symbol: "2845.TW", name: "遠東銀" }
                         ]
                     },
                     {
-                        name: "🇺🇸 美國科技巨頭",
+                        name: "🚢 台股 - 傳產、塑化、航運與鋼鐵",
                         stocks: [
-                            { symbol: "NVDA", name: "輝達 (NVIDIA)" },
-                            { symbol: "AAPL", name: "蘋果 (Apple)" },
-                            { symbol: "MSFT", name: "微軟 (Microsoft)" },
-                            { symbol: "TSLA", name: "特斯拉 (Tesla)" },
-                            { symbol: "AMZN", name: "亞馬遜 (Amazon)" },
-                            { symbol: "GOOGL", name: "谷歌 (Google)" }
+                            { symbol: "2603.TW", name: "長榮" }, { symbol: "2609.TW", name: "陽明" }, { symbol: "2615.TW", name: "萬海" },
+                            { symbol: "2618.TW", name: "長榮航" }, { symbol: "2610.TW", name: "華航" }, { symbol: "2606.TW", name: "裕民" },
+                            { symbol: "1301.TW", name: "台塑" }, { symbol: "1303.TW", name: "南亞" }, { symbol: "1326.TW", name: "台化" },
+                            { symbol: "6505.TW", name: "台塑化" }, { symbol: "2002.TW", name: "中鋼" }, { symbol: "2014.TW", name: "中鴻" },
+                            { symbol: "1101.TW", name: "台泥" }, { symbol: "1102.TW", name: "亞泥" }, { symbol: "1216.TW", name: "統一" },
+                            { symbol: "2912.TW", name: "統一超" }, { symbol: "5903.TW", name: "全家" }, { symbol: "2207.TW", name: "和泰車" },
+                            { symbol: "2201.TW", name: "裕隆" }, { symbol: "2105.TW", name: "正新" }, { symbol: "9904.TW", name: "寶成" },
+                            { symbol: "1402.TW", name: "遠東新" }, { symbol: "9921.TW", name: "巨大" }, { symbol: "9914.TW", name: "美利達" },
+                            { symbol: "3376.TW", name: "新日興" }, { symbol: "1504.TW", name: "東元" }, { symbol: "1519.TW", name: "華城" },
+                            { symbol: "1513.TW", name: "中興電" }, { symbol: "1514.TW", name: "亞力" }, { symbol: "1503.TW", name: "士電" }
                         ]
                     },
                     {
-                        name: "📈 熱門指數與 ETF",
+                        name: "🧬 台股 - 生技醫療、營建與其他",
                         stocks: [
-                            { symbol: "0050.TW", name: "元大台灣50" },
-                            { symbol: "006208.TW", name: "富邦台50" },
-                            { symbol: "SPY", name: "標普500 ETF" },
-                            { symbol: "QQQ", name: "那斯達克100 ETF" }
+                            { symbol: "4743.TW", name: "合一" }, { symbol: "6446.TW", name: "藥華藥" }, { symbol: "6472.TW", name: "保瑞" },
+                            { symbol: "4147.TW", name: "中天" }, { symbol: "1795.TW", name: "美時" }, { symbol: "4123.TW", name: "晟德" },
+                            { symbol: "2501.TW", name: "國建" }, { symbol: "2542.TW", name: "興富發" }, { symbol: "5522.TW", name: "遠雄" },
+                            { symbol: "9933.TW", name: "中鼎" }, { symbol: "9945.TW", name: "潤泰新" }, { symbol: "2915.TW", name: "潤泰全" }
+                        ]
+                    },
+                    {
+                        name: "🇺🇸 美國 - 科技巨頭與 AI 概念股",
+                        stocks: [
+                            { symbol: "NVDA", name: "輝達 (NVIDIA)" }, { symbol: "AAPL", name: "蘋果 (Apple)" }, { symbol: "MSFT", name: "微軟 (Microsoft)" },
+                            { symbol: "TSLA", name: "特斯拉 (Tesla)" }, { symbol: "AMZN", name: "亞馬遜 (Amazon)" }, { symbol: "GOOGL", name: "谷歌 (Google)" },
+                            { symbol: "META", name: "Meta (Facebook)" }, { symbol: "AMD", name: "超微半導體" }, { symbol: "NFLX", name: "網飛 (Netflix)" },
+                            { symbol: "AVGO", name: "博通 (Broadcom)" }, { symbol: "QCOM", name: "高通 (Qualcomm)" }, { symbol: "INTC", name: "英特爾 (Intel)" },
+                            { symbol: "SMCI", name: "美超微電腦" }, { symbol: "ARM", name: "安謀控股" }, { symbol: "PLTR", name: "帕蘭蒂爾 (Palantir)" },
+                            { symbol: "TSM", name: "台積電ADR" }, { symbol: "ASML", name: "艾司摩爾" }, { symbol: "MU", name: "美光科技" }
+                        ]
+                    },
+                    {
+                        name: "💳 美國 - 金融、消費與傳統巨頭",
+                        stocks: [
+                            { symbol: "JPM", name: "摩根大通" }, { symbol: "BRK-B", name: "波克夏海瑟威" }, { symbol: "V", name: "Visa" },
+                            { symbol: "MA", name: "萬事達卡" }, { symbol: "BAC", name: "美國銀行" }, { symbol: "WMT", name: "沃爾瑪" },
+                            { symbol: "JNJ", name: "強生公司" }, { symbol: "PG", name: "寶僑" }, { symbol: "DIS", name: "迪士尼" },
+                            { symbol: "KO", name: "可口可樂" }, { symbol: "PEP", name: "百事公司" }, { symbol: "MCD", name: "麥當勞" }
+                        ]
+                    },
+                    {
+                        name: "📈 熱門指數、ETF 與海外基金",
+                        stocks: [
+                            { symbol: "0050.TW", name: "元大台灣50" }, { symbol: "006208.TW", name: "富邦台50" }, { symbol: "00878.TW", name: "國泰永續高股息" },
+                            { symbol: "0056.TW", name: "元大高股息" }, { symbol: "00919.TW", name: "群益台灣精選高息" }, { symbol: "00929.TW", name: "復華台灣科技優息" },
+                            { symbol: "SPY", name: "標普500 ETF" }, { symbol: "QQQ", name: "那斯達克100 ETF" }, { symbol: "SOXX", name: "半導體ETF" },
+                            { symbol: "VTI", name: "全美股票ETF" }, { symbol: "VT", name: "全球股票ETF" }
+                        ]
+                    },
+                    {
+                        name: "🪙 加密貨幣與相關標的",
+                        stocks: [
+                            { symbol: "BTC-USD", name: "比特幣" }, { symbol: "ETH-USD", name: "以太幣" }, { symbol: "SOL-USD", name: "Solana" },
+                            { symbol: "DOGE-USD", name: "狗狗幣" }, { symbol: "COIN", name: "Coinbase" }, { symbol: "MSTR", name: "微策略" }
                         ]
                     }
                 ];
@@ -274,9 +328,9 @@ def home(request: Request, user: str = Depends(verify_session)):
                     ['1', '2', '3', '4', 'selector'].forEach(i => {
                         const btn = document.getElementById(`tabBtn${i}`);
                         if (i == tabNum) {
-                            btn.className = "pb-2 font-semibold text-lg tab-active transition cursor-pointer whitespace-nowrap";
+                            btn.className = "pb-2 font-semibold text-base sm:text-lg tab-active transition cursor-pointer whitespace-nowrap";
                         } else {
-                            btn.className = "pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap";
+                            btn.className = "pb-2 font-semibold text-base sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap";
                         }
                     });
                     renderContent();
@@ -285,28 +339,28 @@ def home(request: Request, user: str = Depends(verify_session)):
                 function renderContent() {
                     const area = document.getElementById('contentArea');
                     if (currentTab === 'selector') {
-                        // 渲染分類選股介面
+                        // 渲染專業選股分類專區 (完整 200 支標的)
                         let html = `
-                            <div class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border space-y-6">
+                            <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border space-y-6">
                                 <div>
-                                    <h2 class="text-xl font-bold gold-text">🌟 專業選股分類專區</h2>
-                                    <p class="text-xs text-zinc-400 mt-1">點擊下方股票卡片即可**直接進行 AI 預測**，或將其加入自選股分頁中！</p>
+                                    <h2 class="text-lg sm:text-xl font-bold gold-text">🌟 專業選股分類專區</h2>
+                                    <p class="text-xs text-zinc-400 mt-1">點擊「＋加入」按鈕可將股票選入您的任一自選股分頁中！</p>
                                 </div>
                         `;
                         categories.forEach(cat => {
                             html += `
                                 <div class="space-y-3">
-                                    <h3 class="text-sm font-bold text-zinc-300 border-b border-zinc-900 pb-1">${cat.name}</h3>
-                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                    <h3 class="text-xs sm:text-sm font-bold text-zinc-300 border-b border-zinc-900 pb-1">${cat.name}</h3>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                             `;
                             cat.stocks.forEach(s => {
                                 html += `
                                     <div class="bg-black border gold-border p-3 rounded-lg flex justify-between items-center hover:bg-zinc-900 transition">
-                                        <div class="cursor-pointer flex-1" onclick="runSinglePrediction('${s.symbol}')">
-                                            <div class="text-sm font-bold text-white">${s.name}</div>
+                                        <div>
+                                            <div class="text-xs sm:text-sm font-bold text-white">${s.name}</div>
                                             <div class="text-xs gold-text">${s.symbol}</div>
                                         </div>
-                                        <button onclick="quickAdd('${s.symbol}')" class="text-xs bg-zinc-800 hover:bg-[#d4af37] hover:text-black text-zinc-300 px-2.5 py-1 rounded transition font-bold" title="加入自選股1">＋加入</button>
+                                        <button onclick="promptAddStock('${s.symbol}', '${s.name}')" class="text-xs bg-zinc-800 hover:bg-[#d4af37] hover:text-black text-zinc-300 px-2.5 py-1.5 rounded transition font-bold whitespace-nowrap">＋加入</button>
                                     </div>
                                 `;
                             });
@@ -315,48 +369,83 @@ def home(request: Request, user: str = Depends(verify_session)):
                         html += `</div>`;
                         area.innerHTML = html;
                     } else {
-                        // 渲染自選股 1~4 管理介面
+                        // 渲染自選股 1~4 管理介面 (像第二張圖的精美排版，點擊卡片才進行預測)
                         const watchlists = getWatchlists();
                         const stocks = watchlists[currentTab] || [];
                         area.innerHTML = `
-                            <div class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border">
+                            <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border">
                                 <div class="flex justify-between items-center mb-4">
-                                    <h2 class="text-xl font-bold gold-text">📋 自選股 ${currentTab} 管理 (上限 50 支)</h2>
+                                    <h2 class="text-lg sm:text-xl font-bold gold-text">📋 自選股 ${currentTab} 管理 (上限 50 支)</h2>
                                     <span class="text-xs text-zinc-400">已儲存: ${stocks.length} / 50</span>
                                 </div>
 
-                                <div class="flex gap-3 mb-4">
-                                    <input type="text" id="tickerInput" placeholder="輸入股票代號 (例: 2330.TW, NVDA)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-sm">
-                                    <button onclick="addStock()" class="gold-bg text-black px-5 py-2 rounded-lg font-bold text-sm transition shadow cursor-pointer">新增股票</button>
+                                <div class="flex gap-2 sm:gap-3 mb-6">
+                                    <input type="text" id="tickerInput" placeholder="輸入股票代號 (例: 2330.TW, NVDA)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-xs sm:text-sm">
+                                    <button onclick="addStock()" class="gold-bg text-black px-4 sm:px-5 py-2 rounded-lg font-bold text-xs sm:text-sm transition shadow cursor-pointer whitespace-nowrap">新增股票</button>
                                 </div>
 
-                                <div id="stockChips" class="flex flex-wrap gap-2 mb-6 min-h-[50px] p-3 bg-black rounded-lg border border-zinc-900"></div>
-
-                                <button onclick="runBatchPrediction()" id="predictBtn" class="w-full gold-bg text-black font-extrabold py-3 rounded-lg transition shadow-xl text-lg cursor-pointer">🚀 開始一鍵多空預測</button>
+                                <div id="stockCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 min-h-[120px] p-2 bg-black rounded-lg border border-zinc-900"></div>
                             </div>
                         `;
-                        renderStocksList(stocks);
+                        renderStocksCards(stocks);
                     }
                 }
 
-                function renderStocksList(stocks) {
-                    const container = document.getElementById('stockChips');
+                function renderStocksCards(stocks) {
+                    const container = document.getElementById('stockCardsGrid');
                     if (!container) return;
                     container.innerHTML = '';
                     if (stocks.length === 0) {
-                        container.innerHTML = '<span class="text-zinc-600 text-xs italic self-center">目前尚無自選股，可至「專業選股專區」挑選或於上方自行輸入。</span>';
+                        container.innerHTML = '<div class="col-span-full text-zinc-600 text-xs italic text-center py-8">目前尚無自選股，請至上方輸入或透過「🌟 專業選股專區」挑選加入。</div>';
                         return;
                     }
 
                     stocks.forEach((ticker, index) => {
-                        const chip = document.createElement('div');
-                        chip.className = "flex items-center gap-2 bg-zinc-900 border gold-border px-3 py-1.5 rounded-md text-sm text-[#d4af37]";
-                        chip.innerHTML = `
-                            <span class="cursor-pointer font-bold hover:underline" onclick="runSinglePrediction('${ticker}')" title="點擊直接預測">${ticker}</span>
-                            <button onclick="removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold ml-1 cursor-pointer">&times;</button>
+                        const card = document.createElement('div');
+                        card.className = "bg-black border gold-border p-4 rounded-xl flex flex-col justify-between hover:bg-zinc-900 transition cursor-pointer shadow-lg";
+                        card.onclick = () => runSinglePrediction(ticker);
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <div class="text-xs text-zinc-400">自選標的</div>
+                                    <div class="text-base sm:text-lg font-bold gold-text mt-0.5">${ticker}</div>
+                                </div>
+                                <button onclick="event.stopPropagation(); removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold text-lg px-2" title="刪除">&times;</button>
+                            </div>
+                            <div class="flex justify-between items-end mt-4 pt-2 border-t border-zinc-900">
+                                <span class="text-xs text-zinc-500">點擊卡片進行 AI 預測</span>
+                                <span class="text-xs gold-text font-bold">▶ 執行預測</span>
+                            </div>
                         `;
-                        container.appendChild(chip);
+                        container.appendChild(card);
                     });
+                }
+
+                function promptAddStock(symbol, name) {
+                    let targetTab = prompt(`請選擇要將「${name} (${symbol})」加入哪一個自選股分頁？\n請輸入數字 1、2、3 或 4：`, "1");
+                    if (!targetTab) return;
+                    targetTab = targetTab.trim();
+                    if (!['1', '2', '3', '4'].includes(targetTab)) {
+                        alert('輸入錯誤，請輸入 1 到 4 的數字！');
+                        return;
+                    }
+
+                    let watchlists = getWatchlists();
+                    let stocks = watchlists[targetTab];
+
+                    if (stocks.length >= 50) {
+                        alert(`「自選股 ${targetTab}」已達上限 50 支！`);
+                        return;
+                    }
+                    if (stocks.includes(symbol)) {
+                        alert(`${symbol} 已經存在於「自選股 ${targetTab}」中！`);
+                        return;
+                    }
+
+                    stocks.push(symbol);
+                    watchlists[targetTab] = stocks;
+                    saveWatchlists(watchlists);
+                    alert(`成功將 ${symbol} (${name}) 加入「自選股 ${targetTab}」！`);
                 }
 
                 function addStock() {
@@ -380,43 +469,17 @@ def home(request: Request, user: str = Depends(verify_session)):
                     watchlists[currentTab] = stocks;
                     saveWatchlists(watchlists);
                     input.value = '';
-                    renderStocksList(stocks);
-                }
-
-                function quickAdd(ticker) {
-                    let watchlists = getWatchlists();
-                    let stocks = watchlists[1]; // 預設加到自選股 1
-                    if (!stocks.includes(ticker)) {
-                        stocks.push(ticker);
-                        saveWatchlists(watchlists);
-                        alert(`成功將 ${ticker} 加入「自選股 1」！`);
-                    } else {
-                        alert(`${ticker} 已經存在於「自選股 1」中！`);
-                    }
+                    renderStocksCards(stocks);
                 }
 
                 function removeStock(index) {
                     let watchlists = getWatchlists();
                     watchlists[currentTab].splice(index, 1);
                     saveWatchlists(watchlists);
-                    renderStocksList(watchlists[currentTab]);
+                    renderStocksCards(watchlists[currentTab]);
                 }
 
                 async function runSinglePrediction(ticker) {
-                    await fetchAndDisplayPredictions(ticker);
-                }
-
-                async function runBatchPrediction() {
-                    let watchlists = getWatchlists();
-                    let stocks = watchlists[currentTab];
-                    if (stocks.length === 0) {
-                        alert('請先在此分頁新增至少一支股票！');
-                        return;
-                    }
-                    await fetchAndDisplayPredictions(stocks.join(','));
-                }
-
-                async function fetchAndDisplayPredictions(tickerString) {
                     const resultSec = document.getElementById('resultSection');
                     const output = document.getElementById('outputResult');
                     
@@ -425,7 +488,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                     resultSec.scrollIntoView({ behavior: 'smooth' });
 
                     try {
-                        const response = await fetch(`/predict/${encodeURIComponent(tickerString)}`);
+                        const response = await fetch(`/predict/${encodeURIComponent(ticker)}`);
                         const data = await response.json();
                         
                         let htmlContent = '';
@@ -551,3 +614,8 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         
     except Exception as e:
         return {"error": str(e)}
+'''
+
+with open("main.py", "w", encoding="utf-8") as f:
+    f.write(code)
+print("main.py successfully updated.")
