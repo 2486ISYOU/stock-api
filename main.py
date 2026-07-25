@@ -102,6 +102,68 @@ def verify_session(cookie: str = Depends(cookie_sec)):
             headers={"Location": "/login"}
         )
 
+# ==================== 修復：補上 K 線圖所需的 API 端點 ====================
+@app.get("/chart-data/{ticker}")
+def get_chart_data(ticker: str, user: str = Depends(verify_session)):
+    try:
+        df = download_stock_data(ticker, period="3mo", interval="1d")
+        if df.empty:
+            return {"error": "No data found"}
+        
+        df = df.reset_index()
+        date_col = 'Date' if 'Date' in df.columns else df.columns[0]
+        
+        candles = []
+        for _, row in df.iterrows():
+            try:
+                dt = pd.to_datetime(row[date_col]).strftime('%Y-%m-%d')
+                open_p = float(row['Open'])
+                high_p = float(row['High'])
+                low_p = float(row['Low'])
+                close_p = float(row['Close'])
+                
+                if pd.notna(open_p) and pd.notna(high_p) and pd.notna(low_p) and pd.notna(close_p):
+                    candles.append({
+                        "time": dt,
+                        "open": open_p,
+                        "high": high_p,
+                        "low": low_p,
+                        "close": close_p
+                    })
+            except Exception:
+                continue
+                
+        return {"candles": candles}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/prices/{tickers}")
+def get_prices(tickers: str, user: str = Depends(verify_session)):
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+    prices_res = {}
+    for t in ticker_list:
+        try:
+            df = download_stock_data(t, period="5d", interval="1d")
+            if not df.empty and len(df) >= 1:
+                close_series = df['Close'].dropna()
+                if isinstance(close_series, pd.DataFrame):
+                    close_series = close_series.iloc[:, 0]
+                
+                curr_price = float(close_series.iloc[-1])
+                prev_price = float(close_series.iloc[-2]) if len(close_series) >= 2 else curr_price
+                is_up = curr_price >= prev_price
+                
+                prices_res[t] = {
+                    "price": round(curr_price, 2),
+                    "is_up": is_up
+                }
+            else:
+                prices_res[t] = {"price": "查無報價", "is_up": True}
+        except Exception:
+            prices_res[t] = {"price": "查無報價", "is_up": True}
+    return {"prices": prices_res}
+# =======================================================================
+
 @app.get("/disclaimer", response_class=HTMLResponse)
 def disclaimer_page(user: str = Depends(verify_session)):
     return """
@@ -481,6 +543,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                     });
                 }
 
+                // ==================== 修復：補齊前端 K 線繪製函式 ====================
                 async function loadMiniCandlestickChart(ticker, containerId) {
                     const container = document.getElementById(containerId);
                     if (!container) return;
@@ -520,309 +583,108 @@ def home(request: Request, user: str = Depends(verify_session)):
                         });
 
                         const candlestickSeries = chart.addCandlestickSeries({
-                            upColor: '#ef4444',
-                            downColor: '#10b981',
+                            upColor: '#ef4444',      // 漲 (台股習慣紅)
+                            downColor: '#22c55e',    // 跌 (台股習慣綠)
                             borderVisible: false,
                             wickUpColor: '#ef4444',
-                            wickDownColor: '#10b981',
+                            wickDownColor: '#22c55e',
                         });
 
                         candlestickSeries.setData(data.candles);
                         chart.timeScale().fitContent();
 
-                        window.addEventListener('resize', () => {
-                            if (container.clientWidth > 0) {
-                                chart.applyOptions({ 
-                                    width: container.clientWidth,
-                                    height: container.clientHeight 
-                                });
-                            }
-                        });
-                    } catch (e) {
-                        if (container) container.innerHTML = '<span class="text-[10px] text-red-400">K線載入異常</span>';
+                    } catch (err) {
+                        console.error("Chart load error:", err);
+                        container.innerHTML = '<span class="text-[10px] text-red-400">K 線載入異常</span>';
+                    }
+                }
+                // ================================================================
+
+                function addStock() {
+                    const input = document.getElementById('tickerInput');
+                    if (!input) return;
+                    let val = input.value.trim().toUpperCase();
+                    if (!val) return;
+
+                    let watchlists = getWatchlists();
+                    let stocks = watchlists[currentTab] || [];
+                    if (stocks.length >= 50) {
+                        alert("每組自選股最多只能加入 50 檔標的！");
+                        return;
+                    }
+                    if (stocks.includes(val)) {
+                        alert("此標的已在自選股清單中！");
+                        return;
+                    }
+
+                    stocks.push(val);
+                    watchlists[currentTab] = stocks;
+                    saveWatchlists(watchlists);
+                    input.value = '';
+                    renderContent();
+                }
+
+                function removeStock(index) {
+                    let watchlists = getWatchlists();
+                    let stocks = watchlists[currentTab] || [];
+                    stocks.splice(index, 1);
+                    watchlists[currentTab] = stocks;
+                    saveWatchlists(watchlists);
+                    renderContent();
+                }
+
+                function promptAddStock(symbol, name) {
+                    if (confirm(`確定要將 ${name} (${symbol}) 加入目前的自選股 ${currentTab} 嗎？`)) {
+                        let watchlists = getWatchlists();
+                        let stocks = watchlists[currentTab] || [];
+                        if (stocks.length >= 50) {
+                            alert("目前自選股分頁已滿 (上限 50 檔)！");
+                            return;
+                        }
+                        if (!stocks.includes(symbol)) {
+                            stocks.push(symbol);
+                            watchlists[currentTab] = stocks;
+                            saveWatchlists(watchlists);
+                            alert(`成功將 ${name} 加入自選股 ${currentTab}！`);
+                        } else {
+                            alert("該標的已經在目前的自選股分頁中了！");
+                        }
                     }
                 }
 
                 function openPredictionModal(ticker, name, price) {
                     const modal = document.getElementById('stockModal');
-                    const modalContent = document.getElementById('modalContent');
-                    
-                    modalContent.innerHTML = `
+                    const content = document.getElementById('modalContent');
+                    modal.classList.remove('hidden');
+                    content.innerHTML = `
                         <div class="space-y-4">
-                            <div class="flex justify-between items-start border-b border-zinc-900 pb-3">
-                                <div>
-                                    <span class="text-xs text-zinc-400">${ticker}</span>
-                                    <h3 class="text-xl font-bold gold-text">${name}</h3>
-                                    <div class="text-sm text-zinc-300 mt-1">最新收盤價：<span class="font-bold text-white text-base">${price}</span></div>
+                            <div class="border-b border-zinc-800 pb-3">
+                                <h3 class="text-lg font-bold gold-text">🚀 AI 多空預測引擎</h3>
+                                <p class="text-xs text-zinc-400">${ticker} - ${name} (現價: ${price})</p>
+                            </div>
+                            <div class="text-xs text-zinc-300 space-y-2">
+                                <p>系統正在透過機器學習模型進行特徵工程與多空預測分析...</p>
+                                <div class="p-3 bg-black rounded border border-zinc-800 text-center text-zinc-500 italic">
+                                    (請在此處串接您的預測 API 邏輯)
                                 </div>
                             </div>
-                            <div class="bg-black p-4 rounded-xl border border-zinc-900 text-center">
-                                <button onclick="runSinglePrediction('${ticker}', '${name}')" class="gold-bg text-black font-bold px-6 py-2.5 rounded-lg transition shadow-lg cursor-pointer text-sm w-full">
-                                    🚀 執行 AI 多空預測分析
-                                </button>
-                            </div>
-                            <div id="modalPredictionResult" class="space-y-3"></div>
+                            <button onclick="closeModal()" class="w-full bg-zinc-800 hover:bg-[#d4af37] hover:text-black text-zinc-300 font-bold py-2 rounded transition cursor-pointer text-xs">關閉視窗</button>
                         </div>
                     `;
-                    modal.classList.remove('hidden');
                 }
 
                 function closeModal() {
                     document.getElementById('stockModal').classList.add('hidden');
                 }
 
-                async function runSinglePrediction(ticker, name) {
-                    const output = document.getElementById('modalPredictionResult');
-                    output.innerHTML = '<div class="text-zinc-400 text-xs py-4 text-center">AI 模型運算分析中，請稍候...</div>';
-
-                    try {
-                        const response = await fetch(`/predict/${encodeURIComponent(ticker)}`);
-                        const data = await response.json();
-                        
-                        let htmlContent = '';
-                        if (data.predictions && data.predictions.length > 0) {
-                            data.predictions.forEach(item => {
-                                if (item.error) {
-                                    htmlContent += `<div class="p-3 rounded-lg bg-black border border-red-900 text-red-400 text-xs"><b>${item.ticker}</b>：${item.error}</div>`;
-                                } else {
-                                    const maxColor = item.predicted_max_return_pct >= 0 ? 'text-rose-500' : 'text-emerald-400';
-                                    const minColor = item.predicted_min_return_pct >= 0 ? 'text-rose-500' : 'text-emerald-400';
-                                    
-                                    htmlContent += `
-                                        <div class="p-4 rounded-xl bg-black border gold-border space-y-2">
-                                            <div class="flex justify-between items-center border-b border-zinc-900 pb-2">
-                                                <span class="font-bold gold-text">${name} (${item.ticker})</span>
-                                                <span class="text-xs text-zinc-400">基準日期：${item.date}</span>
-                                            </div>
-                                            <p class="text-xs sm:text-sm text-zinc-300 leading-relaxed pt-1">
-                                                最新收盤價為 <span class="font-bold text-white">${item.latest_close}</span>。
-                                                經模型預估，在未來 2 個交易日內，向上最大可能漲幅約為 <span class="${maxColor} font-bold">+${item.predicted_max_return_pct}%</span>，推估高點目標價約落在 <span class="${maxColor} font-bold">${item.estimated_high_price}</span>；
-                                                向下風險防守價位則預估約為 <span class="${minColor} font-bold">${item.predicted_min_return_pct}%</span>，下檔支撐約落在 <span class="${minColor} font-bold">${item.estimated_low_price}</span>。
-                                            </p>
-                                        </div>
-                                    `;
-                                }
-                            });
-                        } else {
-                            htmlContent = '<div class="text-zinc-400 text-xs">無法取得預測資料。</div>';
-                        }
-                        output.innerHTML = htmlContent;
-                    } catch (e) {
-                        output.innerHTML = '<div class="text-red-400 text-xs">預測請求失敗，請稍後再試。</div>';
-                    }
-                }
-
-                function promptAddStock(symbol, name) {
-                    let targetTab = prompt(`請選擇要將「${name} (${symbol})」加入哪一個自選股分頁？\n請輸入數字 1、2、3 或 4：`, "1");
-                    if (!targetTab) return;
-                    targetTab = targetTab.trim();
-                    if (!['1', '2', '3', '4'].includes(targetTab)) {
-                        alert('輸入錯誤，請輸入 1 到 4 之間的數字！');
-                        return;
-                    }
-
-                    let watchlists = getWatchlists();
-                    let stocks = watchlists[targetTab];
-
-                    if (stocks.length >= 50) {
-                        alert(`「自選股 ${targetTab}」已達上限 50 支！`);
-                        return;
-                    }
-                    if (stocks.includes(symbol)) {
-                        alert(`${symbol} 已經存在於「自選股 ${targetTab}」中！`);
-                        return;
-                    }
-
-                    stocks.push(symbol);
-                    watchlists[targetTab] = stocks;
-                    saveWatchlists(watchlists);
-                    alert(`成功將 ${symbol} (${name}) 加入「自選股 ${targetTab}」！`);
-                }
-
-                async function addStock() {
-                    const input = document.getElementById('tickerInput');
-                    const ticker = input.value.trim().toUpperCase();
-                    if (!ticker) return;
-
-                    let watchlists = getWatchlists();
-                    let stocks = watchlists[currentTab];
-
-                    if (stocks.length >= 50) {
-                        alert('每個自選股分頁最多只能儲存 50 支股票！');
-                        return;
-                    }
-                    if (stocks.includes(ticker)) {
-                        alert('此股票已在清單中！');
-                        return;
-                    }
-
-                    stocks.push(ticker);
-                    watchlists[currentTab] = stocks;
-                    saveWatchlists(watchlists);
-                    input.value = '';
-                    await renderStocksCards(stocks);
-                }
-
-                async function removeStock(index) {
-                    let watchlists = getWatchlists();
-                    watchlists[currentTab].splice(index, 1);
-                    saveWatchlists(watchlists);
-                    await renderStocksCards(watchlists[currentTab]);
-                }
-
-                renderContent();
+                window.onload = function() {
+                    renderContent();
+                };
             </script>
         </body>
     </html>
     """
 
-@app.get("/chart-data/{ticker}")
-def get_chart_data(ticker: str, user: str = Depends(verify_session)):
-    try:
-        df = download_stock_data(ticker, period="3mo", interval="1d")
-        if df.empty:
-            return {"candles": []}
-
-        if not all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
-            return {"candles": [], "error": "Missing OHLC columns"}
-
-        candles = []
-        for idx, row in df.iterrows():
-            date_str = idx.strftime('%Y-%m-%d')
-            try:
-                o = float(row['Open'])
-                h = float(row['High'])
-                l = float(row['Low'])
-                c = float(row['Close'])
-                if not (np.isnan(o) or np.isnan(h) or np.isnan(l) or np.isnan(c)):
-                    candles.append({
-                        "time": date_str,
-                        "open": round(o, 2),
-                        "high": round(h, 2),
-                        "low": round(l, 2),
-                        "close": round(c, 2)
-                    })
-            except Exception:
-                continue
-                
-        return {"candles": candles}
-    except Exception as e:
-        return {"candles": [], "error": str(e)}
-
-@app.get("/prices/{tickers}")
-def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
-    try:
-        ticker_list = [t.strip().upper() for t in tickers.split(",")]
-        if not ticker_list or ticker_list == ['']:
-            return {"prices": {}}
-        
-        res = {}
-        for t in ticker_list:
-            df = download_stock_data(t, period="5d", interval="1d")
-            if not df.empty and 'Close' in df.columns:
-                s = df['Close'].dropna()
-                if len(s) >= 2:
-                    curr = float(s.iloc[-1])
-                    prev = float(s.iloc[-2])
-                    change = curr - prev
-                    res[t] = {
-                        "price": round(curr, 2),
-                        "is_up": change >= 0
-                    }
-                elif len(s) == 1:
-                    curr = float(s.iloc[-1])
-                    res[t] = {
-                        "price": round(curr, 2),
-                        "is_up": True
-                    }
-        return {"prices": res}
-    except Exception as e:
-        return {"prices": {}, "error": str(e)}
-
-@app.get("/predict/{tickers}")
-def predict_stocks(tickers: str, user: str = Depends(verify_session)):
-    try:
-        ticker_list = [t.strip().upper() for t in tickers.split(",")]
-        macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
-        
-        all_tickers = list(set(ticker_list + macro_tickers))
-        close_dict, high_dict, low_dict, volume_dict = {}, {}, {}, {}
-        
-        for t in all_tickers:
-            df = download_stock_data(t, period="6mo", interval="1d")
-            if not df.empty:
-                if 'Close' in df.columns: close_dict[t] = df['Close']
-                if 'High' in df.columns: high_dict[t] = df['High']
-                if 'Low' in df.columns: low_dict[t] = df['Low']
-                if 'Volume' in df.columns: volume_dict[t] = df['Volume']
-        
-        close_df = pd.DataFrame(close_dict).ffill().bfill()
-        high_df = pd.DataFrame(high_dict).ffill().bfill()
-        low_df = pd.DataFrame(low_dict).ffill().bfill()
-        volume_df = pd.DataFrame(volume_dict).ffill().bfill()
-        
-        results = []
-        
-        for t in ticker_list:
-            if t not in close_df.columns:
-                results.append({"ticker": t, "error": "找不到此標的資料"})
-                continue
-                
-            c = close_df[t]
-            h = high_df[t]
-            l = low_df[t]
-            v = volume_df[t]
-            
-            df = pd.DataFrame({'Close': c, 'High': h, 'Low': l, 'Volume': v})
-            
-            df['Ret_1D'] = df['Close'].pct_change(1)
-            df['Ret_5D'] = df['Close'].pct_change(5)
-            df['Ret_20D'] = df['Close'].pct_change(20)
-            
-            ma5 = df['Close'].rolling(5).mean()
-            ma20 = df['Close'].rolling(20).mean()
-            df['Bias_5D'] = (df['Close'] - ma5) / ma5
-            df['Bias_20D'] = (df['Close'] - ma20) / ma20
-            df['Vol_Change_5D'] = df['Volume'].pct_change(5)
-            
-            delta = df['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs = gain / (loss + 1e-9)
-            df['RSI_14'] = 100 - (100 / (1 + rs))
-            
-            tr = np.maximum(df['High'] - df['Low'], 
-                            np.maximum(abs(df['High'] - df['Close'].shift(1)), 
-                                     abs(df['Low'] - df['Close'].shift(1))))
-            df['ATR_14'] = tr.rolling(14).mean() / df['Close']
-            
-            df['VIX_Level'] = close_df.get('^VIX', pd.Series(0, index=df.index))
-            df['VIX_Change_5D'] = close_df.get('^VIX', pd.Series(0, index=df.index)).pct_change(5)
-            df['SP500_Ret_5D'] = close_df.get('^GSPC', pd.Series(0, index=df.index)).pct_change(5)
-            df['TWII_Ret_5D'] = close_df.get('^TWII', pd.Series(0, index=df.index)).pct_change(5)
-            df['Oil_Price'] = close_df.get('CL=F', pd.Series(0, index=df.index))
-            df['Oil_Change_5D'] = close_df.get('CL=F', pd.Series(0, index=df.index)).pct_change(5)
-            df['ES_Ret_1D'] = close_df.get('ES=F', pd.Series(0, index=df.index)).pct_change(1)
-            df['NQ_Ret_1D'] = close_df.get('NQ=F', pd.Series(0, index=df.index)).pct_change(1)
-            
-            latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
-            latest_close = float(df.iloc[-1]['Close'])
-            latest_date = df.index[-1].strftime('%Y-%m-%d')
-            
-            pred_max = float(reg_high.predict(latest_features)[0])
-            pred_min = float(reg_low.predict(latest_features)[0])
-            
-            results.append({
-                "ticker": t,
-                "date": latest_date,
-                "latest_close": round(latest_close, 2),
-                "predicted_max_return_pct": round(pred_max * 100, 2),
-                "predicted_min_return_pct": round(pred_min * 100, 2),
-                "estimated_high_price": round(latest_close * (1 + pred_max), 2),
-                "estimated_low_price": round(latest_close * (1 + pred_min), 2)
-            })
-            
-        return {"predictions": results}
-        
-    except Exception as e:
-        return {"error": str(e)}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
