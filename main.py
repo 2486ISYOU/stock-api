@@ -10,7 +10,7 @@ import secrets
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.7")
+app = FastAPI(title="股佳寶", version="2.9")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -27,6 +27,30 @@ feature_cols = [
     'Oil_Price', 'Oil_Change_5D',
     'ES_Ret_1D', 'NQ_Ret_1D'
 ]
+
+def download_stock_data(ticker: str, period="3mo", interval="1d"):
+    """自動處理上市 (.TW) 與上櫃 (.TWO) 容錯下載，並完整標準化 OHLCV 欄位的核心輔助函式"""
+    ticker = ticker.strip().upper()
+    df = yf.download(ticker, period=period, interval=interval, auto_adjust=True, progress=False)
+    
+    if df.empty:
+        if ticker.endswith(".TW"):
+            alt_ticker = ticker[:-3] + ".TWO"
+            df = yf.download(alt_ticker, period=period, interval=interval, auto_adjust=True, progress=False)
+        elif ticker.endswith(".TWO"):
+            alt_ticker = ticker[:-4] + ".TW"
+            df = yf.download(alt_ticker, period=period, interval=interval, auto_adjust=True, progress=False)
+        elif "." not in ticker:
+            df = yf.download(ticker + ".TW", period=period, interval=interval, auto_adjust=True, progress=False)
+            if df.empty:
+                df = yf.download(ticker + ".TWO", period=period, interval=interval, auto_adjust=True, progress=False)
+                
+    if not df.empty:
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df.columns = [str(c).capitalize() for c in df.columns]
+        
+    return df
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
@@ -230,11 +254,11 @@ def home(request: Request, user: str = Depends(verify_session)):
                             { symbol: "2421.TW", name: "建準" }, { symbol: "3034.TW", name: "聯詠" }, { symbol: "2408.TW", name: "南亞科" },
                             { symbol: "2344.TW", name: "華邦電" }, { symbol: "2337.TW", name: "旺宏" }, { symbol: "6770.TW", name: "力積電" },
                             { symbol: "3037.TW", name: "欣興" }, { symbol: "3189.TW", name: "景碩" }, { symbol: "8046.TW", name: "南電" },
-                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TW", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
+                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TWO", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
                             { symbol: "3661.TW", name: "世芯-KY" }, { symbol: "3443.TW", name: "創意" }, { symbol: "5269.TW", name: "祥碩" },
                             { symbol: "4968.TW", name: "立積" }, { symbol: "2449.TW", name: "京元電子" }, { symbol: "6531.TW", name: "愛普*" },
                             { symbol: "3035.TW", name: "智原" }, { symbol: "6271.TW", name: "同欣電" }, { symbol: "8299.TW", name: "群聯" },
-                            { symbol: "4938.TW", name: "和碩" }, { symbol: "2324.TW", name: "仁寶" }, { symbol: "3293.TW", name: "鈊象" },
+                            { symbol: "4938.TW", name: "和碩" }, { symbol: "2324.TW", name: "仁寶" }, { symbol: "3293.TWO", name: "鈊象" },
                             { symbol: "3008.TW", name: "大立光" }, { symbol: "2379.TW", name: "瑞昱" }, { symbol: "2409.TW", name: "友達" },
                             { symbol: "3481.TW", name: "群創" }, { symbol: "4958.TW", name: "臻鼎-KY" }, { symbol: "6269.TW", name: "台郡" }
                         ]
@@ -385,7 +409,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                                 </div>
 
                                 <div class="flex gap-2 sm:gap-3 mb-6">
-                                    <input type="text" id="tickerInput" placeholder="輸入代號 (例: 2330.TW, NVDA)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-xs sm:text-sm">
+                                    <input type="text" id="tickerInput" placeholder="輸入代號 (例: 2330.TW, NVDA, 5425.TWO)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-xs sm:text-sm">
                                     <button onclick="addStock()" class="gold-bg text-black px-4 sm:px-5 py-2 rounded-lg font-bold text-xs sm:text-sm transition shadow cursor-pointer whitespace-nowrap">新增股票</button>
                                 </div>
 
@@ -417,7 +441,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                     stocks.forEach((ticker, index) => {
                         const name = stockNameMap[ticker] || ticker;
                         const info = priceData[ticker];
-                        const price = info ? info.price : '載入中...';
+                        const price = info ? info.price : '查無報價';
                         const isUp = info ? info.is_up : true;
                         const priceColor = isUp ? 'text-rose-500' : 'text-emerald-400';
 
@@ -450,18 +474,20 @@ def home(request: Request, user: str = Depends(verify_session)):
                         container.appendChild(card);
                     });
 
-                    // 逐一非同步載入每張卡片的 K 線圖
-                    stocks.forEach((ticker, index) => {
-                        loadMiniCandlestickChart(ticker, `mini-chart-${index}`);
+                    requestAnimationFrame(() => {
+                        stocks.forEach((ticker, index) => {
+                            loadMiniCandlestickChart(ticker, `mini-chart-${index}`);
+                        });
                     });
                 }
 
                 async function loadMiniCandlestickChart(ticker, containerId) {
+                    const container = document.getElementById(containerId);
+                    if (!container) return;
+
                     try {
                         const res = await fetch(`/chart-data/${encodeURIComponent(ticker)}`);
                         const data = await res.json();
-                        const container = document.getElementById(containerId);
-                        if (!container) return;
 
                         container.innerHTML = '';
 
@@ -470,9 +496,12 @@ def home(request: Request, user: str = Depends(verify_session)):
                             return;
                         }
 
+                        const width = container.clientWidth || 280;
+                        const height = container.clientHeight || 128;
+
                         const chart = LightweightCharts.createChart(container, {
-                            width: container.clientWidth,
-                            height: 128,
+                            width: width,
+                            height: height,
                             layout: {
                                 background: { type: 'solid', color: '#000000' },
                                 textColor: '#d4af37',
@@ -483,7 +512,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                             },
                             timeScale: {
                                 borderColor: '#27272a',
-                                visible: false, // 卡片空間有限，隱藏時間軸保持乾淨
+                                visible: false,
                             },
                             rightPriceScale: {
                                 borderColor: '#27272a',
@@ -503,11 +532,13 @@ def home(request: Request, user: str = Depends(verify_session)):
 
                         window.addEventListener('resize', () => {
                             if (container.clientWidth > 0) {
-                                chart.applyOptions({ width: container.clientWidth });
+                                chart.applyOptions({ 
+                                    width: container.clientWidth,
+                                    height: container.clientHeight 
+                                });
                             }
                         });
                     } catch (e) {
-                        const container = document.getElementById(containerId);
                         if (container) container.innerHTML = '<span class="text-[10px] text-red-400">K線載入異常</span>';
                     }
                 }
@@ -648,12 +679,12 @@ def home(request: Request, user: str = Depends(verify_session)):
 @app.get("/chart-data/{ticker}")
 def get_chart_data(ticker: str, user: str = Depends(verify_session)):
     try:
-        df = yf.download(ticker.strip().upper(), period="3mo", interval="1d", auto_adjust=True, progress=False)
+        df = download_stock_data(ticker, period="3mo", interval="1d")
         if df.empty:
             return {"candles": []}
-        
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+
+        if not all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
+            return {"candles": [], "error": "Missing OHLC columns"}
 
         candles = []
         for idx, row in df.iterrows():
@@ -685,17 +716,11 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         if not ticker_list or ticker_list == ['']:
             return {"prices": {}}
         
-        data = yf.download(ticker_list, period="5d", interval="1d", auto_adjust=True, progress=False)
-        close_df = data['Close']
-        if isinstance(close_df, pd.Series):
-            close_df = close_df.to_frame(ticker_list[0])
-        if isinstance(close_df.columns, pd.MultiIndex):
-            close_df.columns = close_df.columns.get_level_values(0)
-        
         res = {}
         for t in ticker_list:
-            if t in close_df.columns:
-                s = close_df[t].dropna()
+            df = download_stock_data(t, period="5d", interval="1d")
+            if not df.empty and 'Close' in df.columns:
+                s = df['Close'].dropna()
                 if len(s) >= 2:
                     curr = float(s.iloc[-1])
                     prev = float(s.iloc[-2])
@@ -720,21 +745,21 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         ticker_list = [t.strip().upper() for t in tickers.split(",")]
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
         
-        all_data = yf.download(ticker_list + macro_tickers, period="6mo", interval="1d", auto_adjust=True, progress=False)
+        all_tickers = list(set(ticker_list + macro_tickers))
+        close_dict, high_dict, low_dict, volume_dict = {}, {}, {}, {}
         
-        close_df = all_data['Close'].ffill().bfill()
-        high_df = all_data['High'].ffill().bfill()
-        low_df = all_data['Low'].ffill().bfill()
-        volume_df = all_data['Volume'].ffill().bfill()
+        for t in all_tickers:
+            df = download_stock_data(t, period="6mo", interval="1d")
+            if not df.empty:
+                if 'Close' in df.columns: close_dict[t] = df['Close']
+                if 'High' in df.columns: high_dict[t] = df['High']
+                if 'Low' in df.columns: low_dict[t] = df['Low']
+                if 'Volume' in df.columns: volume_dict[t] = df['Volume']
         
-        if isinstance(close_df.columns, pd.MultiIndex):
-            close_df.columns = close_df.columns.get_level_values(0)
-        if isinstance(high_df.columns, pd.MultiIndex):
-            high_df.columns = high_df.columns.get_level_values(0)
-        if isinstance(low_df.columns, pd.MultiIndex):
-            low_df.columns = low_df.columns.get_level_values(0)
-        if isinstance(volume_df.columns, pd.MultiIndex):
-            volume_df.columns = volume_df.columns.get_level_values(0)
+        close_df = pd.DataFrame(close_dict).ffill().bfill()
+        high_df = pd.DataFrame(high_dict).ffill().bfill()
+        low_df = pd.DataFrame(low_dict).ffill().bfill()
+        volume_df = pd.DataFrame(volume_dict).ffill().bfill()
         
         results = []
         
@@ -771,14 +796,14 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                                      abs(df['Low'] - df['Close'].shift(1))))
             df['ATR_14'] = tr.rolling(14).mean() / df['Close']
             
-            df['VIX_Level'] = close_df['^VIX']
-            df['VIX_Change_5D'] = close_df['^VIX'].pct_change(5)
-            df['SP500_Ret_5D'] = close_df['^GSPC'].pct_change(5)
-            df['TWII_Ret_5D'] = close_df['^TWII'].pct_change(5)
-            df['Oil_Price'] = close_df['CL=F']
-            df['Oil_Change_5D'] = close_df['CL=F'].pct_change(5)
-            df['ES_Ret_1D'] = close_df['ES=F'].pct_change(1)
-            df['NQ_Ret_1D'] = close_df['NQ=F'].pct_change(1)
+            df['VIX_Level'] = close_df.get('^VIX', pd.Series(0, index=df.index))
+            df['VIX_Change_5D'] = close_df.get('^VIX', pd.Series(0, index=df.index)).pct_change(5)
+            df['SP500_Ret_5D'] = close_df.get('^GSPC', pd.Series(0, index=df.index)).pct_change(5)
+            df['TWII_Ret_5D'] = close_df.get('^TWII', pd.Series(0, index=df.index)).pct_change(5)
+            df['Oil_Price'] = close_df.get('CL=F', pd.Series(0, index=df.index))
+            df['Oil_Change_5D'] = close_df.get('CL=F', pd.Series(0, index=df.index)).pct_change(5)
+            df['ES_Ret_1D'] = close_df.get('ES=F', pd.Series(0, index=df.index)).pct_change(1)
+            df['NQ_Ret_1D'] = close_df.get('NQ=F', pd.Series(0, index=df.index)).pct_change(1)
             
             latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
             latest_close = float(df.iloc[-1]['Close'])
