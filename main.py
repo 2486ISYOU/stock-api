@@ -10,7 +10,7 @@ import secrets
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.6")
+app = FastAPI(title="股佳寶", version="2.7")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -167,7 +167,7 @@ def home(request: Request, user: str = Depends(verify_session)):
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <title>股佳寶 GoodJob - 頂級股市多空預測儀表板</title>
             <script src="https://cdn.tailwindcss.com"></script>
-            <!-- 引入 TradingView Lightweight Charts 用於繪製專業 K 線圖 -->
+            <!-- 引入 TradingView Lightweight Charts -->
             <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
             <style>
                 .gold-text { color: #d4af37; }
@@ -203,9 +203,9 @@ def home(request: Request, user: str = Depends(verify_session)):
                 <div id="contentArea"></div>
             </div>
 
-            <!-- 彈出互動視窗 Modal -->
+            <!-- AI 預測彈出視窗 Modal -->
             <div id="stockModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4">
-                <div class="bg-zinc-950 border gold-border w-full max-w-2xl rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
+                <div class="bg-zinc-950 border gold-border w-full max-w-lg rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
                     <button onclick="closeModal()" class="absolute top-4 right-4 text-zinc-400 hover:text-white text-2xl font-bold cursor-pointer">&times;</button>
                     <div id="modalContent"></div>
                 </div>
@@ -381,7 +381,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                             <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border">
                                 <div class="flex justify-between items-center mb-4">
                                     <h2 class="text-lg sm:text-xl font-bold gold-text">📋 自選股 ${currentTab} 管理 (已加入 ${stocks.length}/50 檔)</h2>
-                                    <span class="text-xs text-zinc-400">點擊卡片以開啟日K線詳情與預測</span>
+                                    <span class="text-xs text-zinc-400">即時日K線與多空預測</span>
                                 </div>
 
                                 <div class="flex gap-2 sm:gap-3 mb-6">
@@ -422,29 +422,97 @@ def home(request: Request, user: str = Depends(verify_session)):
                         const priceColor = isUp ? 'text-rose-500' : 'text-emerald-400';
 
                         const card = document.createElement('div');
-                        card.className = "bg-zinc-950 border gold-border p-4 rounded-xl flex flex-col justify-between hover:bg-zinc-900 transition cursor-pointer shadow-lg";
-                        card.onclick = () => openStockModal(ticker, name, price);
+                        card.className = "bg-zinc-950 border gold-border p-4 rounded-xl flex flex-col justify-between shadow-lg relative";
                         card.innerHTML = `
-                            <div class="flex justify-between items-start">
+                            <div class="flex justify-between items-start mb-2">
                                 <div>
                                     <div class="text-xs text-zinc-400">${ticker}</div>
-                                    <div class="text-lg sm:text-xl font-bold text-white mt-0.5 tracking-wide">${name}</div>
+                                    <div class="text-base sm:text-lg font-bold text-white tracking-wide">${name}</div>
                                 </div>
-                                <button onclick="event.stopPropagation(); removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold text-xl px-2 py-0.5 rounded" title="刪除">&times;</button>
+                                <button onclick="removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold text-xl px-2 py-0.5 rounded cursor-pointer" title="刪除">&times;</button>
                             </div>
-                            <div class="flex justify-between items-end mt-5 pt-3 border-t border-zinc-900">
+                            
+                            <!-- 內嵌於卡片內的 K 線圖容器 -->
+                            <div id="mini-chart-${index}" class="w-full h-32 bg-black rounded-lg border border-zinc-900 my-2 relative overflow-hidden flex items-center justify-center">
+                                <span class="text-[10px] text-zinc-500">載入 K 線中...</span>
+                            </div>
+
+                            <div class="flex justify-between items-center pt-2 border-t border-zinc-900">
                                 <div>
-                                    <span class="text-xs text-zinc-400">最新收盤價：</span>
-                                    <span class="text-base sm:text-lg font-bold ${priceColor}">${price}</span>
+                                    <span class="text-xs text-zinc-400">收盤價：</span>
+                                    <span class="text-sm sm:text-base font-bold ${priceColor}">${price}</span>
                                 </div>
-                                <span class="text-xs gold-text font-bold px-2.5 py-1 rounded bg-black border gold-border">查看日K與預測 ▶</span>
+                                <button onclick="openPredictionModal('${ticker}', '${name}', '${price}')" class="text-xs gold-text font-bold px-3 py-1.5 rounded bg-black border gold-border hover:bg-[#d4af37] hover:text-black transition cursor-pointer">
+                                    🚀 AI 預測分析
+                                </button>
                             </div>
                         `;
                         container.appendChild(card);
                     });
+
+                    // 逐一非同步載入每張卡片的 K 線圖
+                    stocks.forEach((ticker, index) => {
+                        loadMiniCandlestickChart(ticker, `mini-chart-${index}`);
+                    });
                 }
 
-                async function openStockModal(ticker, name, price) {
+                async function loadMiniCandlestickChart(ticker, containerId) {
+                    try {
+                        const res = await fetch(`/chart-data/${encodeURIComponent(ticker)}`);
+                        const data = await res.json();
+                        const container = document.getElementById(containerId);
+                        if (!container) return;
+
+                        container.innerHTML = '';
+
+                        if (data.error || !data.candles || data.candles.length === 0) {
+                            container.innerHTML = '<span class="text-[10px] text-red-400">無法載入 K 線</span>';
+                            return;
+                        }
+
+                        const chart = LightweightCharts.createChart(container, {
+                            width: container.clientWidth,
+                            height: 128,
+                            layout: {
+                                background: { type: 'solid', color: '#000000' },
+                                textColor: '#d4af37',
+                            },
+                            grid: {
+                                vertLines: { color: '#18181b' },
+                                horzLines: { color: '#18181b' },
+                            },
+                            timeScale: {
+                                borderColor: '#27272a',
+                                visible: false, // 卡片空間有限，隱藏時間軸保持乾淨
+                            },
+                            rightPriceScale: {
+                                borderColor: '#27272a',
+                            }
+                        });
+
+                        const candlestickSeries = chart.addCandlestickSeries({
+                            upColor: '#ef4444',
+                            downColor: '#10b981',
+                            borderVisible: false,
+                            wickUpColor: '#ef4444',
+                            wickDownColor: '#10b981',
+                        });
+
+                        candlestickSeries.setData(data.candles);
+                        chart.timeScale().fitContent();
+
+                        window.addEventListener('resize', () => {
+                            if (container.clientWidth > 0) {
+                                chart.applyOptions({ width: container.clientWidth });
+                            }
+                        });
+                    } catch (e) {
+                        const container = document.getElementById(containerId);
+                        if (container) container.innerHTML = '<span class="text-[10px] text-red-400">K線載入異常</span>';
+                    }
+                }
+
+                function openPredictionModal(ticker, name, price) {
                     const modal = document.getElementById('stockModal');
                     const modalContent = document.getElementById('modalContent');
                     
@@ -457,18 +525,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                                     <div class="text-sm text-zinc-300 mt-1">最新收盤價：<span class="font-bold text-white text-base">${price}</span></div>
                                 </div>
                             </div>
-
-                            <!-- 日K線圖表區塊 -->
-                            <div>
-                                <div class="text-xs font-bold text-zinc-400 mb-1 flex justify-between items-center">
-                                    <span>📊 最近日K線走勢圖</span>
-                                    <span class="text-[10px] text-zinc-500">TradingView Chart</span>
-                                </div>
-                                <div id="chartContainer" class="w-full h-64 bg-black rounded-xl border border-zinc-900 relative overflow-hidden flex items-center justify-center">
-                                    <span class="text-xs text-zinc-500">載入 K 線圖表中...</span>
-                                </div>
-                            </div>
-
                             <div class="bg-black p-4 rounded-xl border border-zinc-900 text-center">
                                 <button onclick="runSinglePrediction('${ticker}', '${name}')" class="gold-bg text-black font-bold px-6 py-2.5 rounded-lg transition shadow-lg cursor-pointer text-sm w-full">
                                     🚀 執行 AI 多空預測分析
@@ -478,66 +534,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                         </div>
                     `;
                     modal.classList.remove('hidden');
-                    
-                    // 非同步載入並渲染日K線圖
-                    await loadCandlestickChart(ticker);
-                }
-
-                async function loadCandlestickChart(ticker) {
-                    try {
-                        const res = await fetch(`/chart-data/${encodeURIComponent(ticker)}`);
-                        const data = await res.json();
-                        const container = document.getElementById('chartContainer');
-                        if (!container) return;
-
-                        container.innerHTML = ''; // 清除 loading 文字
-
-                        if (data.error || !data.candles || data.candles.length === 0) {
-                            container.innerHTML = '<span class="text-xs text-red-400">無法載入 K 線圖資料</span>';
-                            return;
-                        }
-
-                        const chart = LightweightCharts.createChart(container, {
-                            width: container.clientWidth,
-                            height: 256,
-                            layout: {
-                                background: { type: 'solid', color: '#000000' },
-                                textColor: '#d4af37',
-                            },
-                            grid: {
-                                vertLines: { color: '#18181b' },
-                                horzLines: { color: '#18181b' },
-                            },
-                            timeScale: {
-                                borderColor: '#27272a',
-                            },
-                            rightPriceScale: {
-                                borderColor: '#27272a',
-                            }
-                        });
-
-                        const candlestickSeries = chart.addCandlestickSeries({
-                            upColor: '#ef4444',      // 紅漲
-                            downColor: '#10b981',    // 綠跌
-                            borderVisible: false,
-                            wickUpColor: '#ef4444',
-                            wickDownColor: '#10b981',
-                        });
-
-                        candlestickSeries.setData(data.candles);
-                        chart.timeScale().fitContent();
-
-                        // RWD 自適應縮放
-                        window.addEventListener('resize', () => {
-                            if (container.clientWidth > 0) {
-                                chart.applyOptions({ width: container.clientWidth });
-                            }
-                        });
-                    } catch (e) {
-                        console.error("K線圖載入失敗", e);
-                        const container = document.getElementById('chartContainer');
-                        if (container) container.innerHTML = '<span class="text-xs text-red-400">K線圖載入異常</span>';
-                    }
                 }
 
                 function closeModal() {
@@ -656,7 +652,6 @@ def get_chart_data(ticker: str, user: str = Depends(verify_session)):
         if df.empty:
             return {"candles": []}
         
-        # 確保 MultiIndex 欄位扁平化處理
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
