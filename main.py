@@ -10,14 +10,13 @@ import secrets
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.0")
+app = FastAPI(title="股佳寶", version="2.1")
 
-# 設定安全 Cookie 驗證機制與你的專屬密碼
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
 cookie_sec = APIKeyCookie(name=COOKIE_NAME, auto_error=False)
 
-# 載入訓練好的機器學習模型
+# 載入機器學習模型
 reg_high = joblib.load("stock_high_regressor.pkl")
 reg_low = joblib.load("stock_low_regressor.pkl")
 
@@ -29,7 +28,6 @@ feature_cols = [
     'ES_Ret_1D', 'NQ_Ret_1D'
 ]
 
-# 1. 奢華黑金登入畫面
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
     return """
@@ -63,7 +61,6 @@ def login_page():
     </html>
     """
 
-# 2. 處理登入並核發通行憑證
 @app.post("/login")
 def login(password: str = Form(...)):
     if secrets.compare_digest(password, MY_SECRET_PASSWORD):
@@ -72,7 +69,6 @@ def login(password: str = Form(...)):
         return response
     return HTMLResponse("<body style='background:black; color:#d4af37; font-family:sans-serif; text-align:center; padding-top:100px;'><h3>密碼錯誤！<a href='/login' style='color:#d4af37;'>點此重試</a></h3></body>", status_code=401)
 
-# 3. 檢查登入狀態
 def verify_session(cookie: str = Depends(cookie_sec)):
     if cookie != "authenticated":
         raise HTTPException(
@@ -80,7 +76,6 @@ def verify_session(cookie: str = Depends(cookie_sec)):
             headers={"Location": "/login"}
         )
 
-# 4. 免責聲明畫面（必須滑到最底並勾選）
 @app.get("/disclaimer", response_class=HTMLResponse)
 def disclaimer_page(user: str = Depends(verify_session)):
     return """
@@ -156,10 +151,8 @@ def disclaimer_page(user: str = Depends(verify_session)):
     </html>
     """
 
-# 5. 主畫面（支援 4 個自選股分頁，每頁 50 支股票）
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, user: str = Depends(verify_session)):
-    # 檢查是否已同意免責聲明
     disclaimer_cookie = request.cookies.get("disclaimer")
     if disclaimer_cookie != "agreed":
         return RedirectResponse(url="/disclaimer", status_code=303)
@@ -191,45 +184,77 @@ def home(request: Request, user: str = Depends(verify_session)):
                     </div>
                 </header>
 
-                <!-- 自選股分頁按鈕 -->
-                <div class="flex border-b border-zinc-800 mb-6 gap-6">
-                    <button onclick="switchTab(1)" id="tabBtn1" class="pb-2 font-semibold text-lg tab-active transition cursor-pointer">自選股 1</button>
-                    <button onclick="switchTab(2)" id="tabBtn2" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer">自選股 2</button>
-                    <button onclick="switchTab(3)" id="tabBtn3" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer">自選股 3</button>
-                    <button onclick="switchTab(4)" id="tabBtn4" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer">自選股 4</button>
+                <!-- 分頁按鈕列 (自選股 1~4 + 專業選股專區) -->
+                <div class="flex border-b border-zinc-800 mb-6 gap-6 overflow-x-auto">
+                    <button onclick="switchTab(1)" id="tabBtn1" class="pb-2 font-semibold text-lg tab-active transition cursor-pointer whitespace-nowrap">自選股 1</button>
+                    <button onclick="switchTab(2)" id="tabBtn2" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 2</button>
+                    <button onclick="switchTab(3)" id="tabBtn3" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 3</button>
+                    <button onclick="switchTab(4)" id="tabBtn4" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 4</button>
+                    <button onclick="switchTab('selector')" id="tabBtnselector" class="pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap flex items-center gap-1">🌟 專業選股專區</button>
                 </div>
 
-                <!-- 分頁管理區 -->
-                <div class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border mb-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 id="watchlistTitle" class="text-xl font-bold gold-text">📋 自選股 1 管理 (上限 50 支)</h2>
-                        <span id="stockCount" class="text-xs text-zinc-400">已儲存: 0 / 50</span>
-                    </div>
+                <!-- 分頁內容區 -->
+                <div id="contentArea"></div>
 
-                    <div class="flex gap-3 mb-4">
-                        <input type="text" id="tickerInput" placeholder="輸入股票代號 (例: 2330.TW, 2454.TW, NVDA)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-sm">
-                        <button onclick="addStock()" class="gold-bg text-black px-5 py-2 rounded-lg font-bold text-sm transition shadow cursor-pointer">新增股票</button>
-                    </div>
-
-                    <div id="stockChips" class="flex flex-wrap gap-2 mb-6 min-h-[50px] p-3 bg-black rounded-lg border border-zinc-900"></div>
-
-                    <button onclick="runPrediction()" id="predictBtn" class="w-full gold-bg text-black font-extrabold py-3 rounded-lg transition shadow-xl text-lg cursor-pointer">🚀 開始一鍵多空預測</button>
-                </div>
-
-                <!-- 結果顯示區 -->
-                <div id="resultSection" class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border hidden">
-                    <h3 class="text-lg font-bold mb-3 gold-text">📊 分析預測報告</h3>
-                    <pre id="outputResult" class="bg-black p-4 rounded-xl text-emerald-400 overflow-x-auto text-xs border border-zinc-900"></pre>
+                <!-- 結果顯示區 (中文流暢解說報告) -->
+                <div id="resultSection" class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border hidden mt-6">
+                    <h3 class="text-xl font-bold mb-4 gold-text flex items-center gap-2">📊 <span>多空 AI 分析解讀報告</span></h3>
+                    <div id="outputResult" class="space-y-4"></div>
                 </div>
             </div>
 
-            <!-- 底部名片角落 (開發者資訊) -->
-            <footer class="w-full border-t border-zinc-900 py-4 px-6 text-right text-xs text-zinc-500 bg-black tracking-wider">
+            <!-- 底部名片角落 -->
+            <footer class="w-full border-t border-zinc-900 py-4 px-6 text-right text-xs text-zinc-500 bg-black tracking-wider mt-12">
                 開發者: 顧家寶 | 開發者信箱: <a href="mailto:jgu9410@gmail.com" class="hover:text-[#d4af37] underline">jgu9410@gmail.com</a>
             </footer>
 
             <script>
                 let currentTab = 1;
+
+                // 內建完整分類優質標的清單
+                const categories = [
+                    {
+                        name: "🇹🇼 台股權值與科技核心",
+                        stocks: [
+                            { symbol: "2330.TW", name: "台積電" },
+                            { symbol: "2454.TW", name: "聯發科" },
+                            { symbol: "2317.TW", name: "鴻海" },
+                            { symbol: "2308.TW", name: "台達電" },
+                            { symbol: "3711.TW", name: "日月光投控" },
+                            { symbol: "3376.TW", name: "新日興" }
+                        ]
+                    },
+                    {
+                        name: "🏦 台股金融保險",
+                        stocks: [
+                            { symbol: "2881.TW", name: "富邦金" },
+                            { symbol: "2882.TW", name: "國泰金" },
+                            { symbol: "2891.TW", name: "中信金" },
+                            { symbol: "2884.TW", name: "玉山金" }
+                        ]
+                    },
+                    {
+                        name: "🇺🇸 美國科技巨頭",
+                        stocks: [
+                            { symbol: "NVDA", name: "輝達 (NVIDIA)" },
+                            { symbol: "AAPL", name: "蘋果 (Apple)" },
+                            { symbol: "MSFT", name: "微軟 (Microsoft)" },
+                            { symbol: "TSLA", name: "特斯拉 (Tesla)" },
+                            { symbol: "AMZN", name: "亞馬遜 (Amazon)" },
+                            { symbol: "GOOGL", name: "谷歌 (Google)" }
+                        ]
+                    },
+                    {
+                        name: "📈 熱門指數與 ETF",
+                        stocks: [
+                            { symbol: "0050.TW", name: "元大台灣50" },
+                            { symbol: "006208.TW", name: "富邦台50" },
+                            { symbol: "SPY", name: "標普500 ETF" },
+                            { symbol: "QQQ", name: "那斯達克100 ETF" }
+                        ]
+                    }
+                ];
+
                 function getWatchlists() {
                     let data = localStorage.getItem('gubao_watchlists');
                     if (!data) {
@@ -246,27 +271,80 @@ def home(request: Request, user: str = Depends(verify_session)):
 
                 function switchTab(tabNum) {
                     currentTab = tabNum;
-                    for (let i = 1; i <= 4; i++) {
+                    ['1', '2', '3', '4', 'selector'].forEach(i => {
                         const btn = document.getElementById(`tabBtn${i}`);
-                        if (i === tabNum) {
-                            btn.className = "pb-2 font-semibold text-lg tab-active transition cursor-pointer";
+                        if (i == tabNum) {
+                            btn.className = "pb-2 font-semibold text-lg tab-active transition cursor-pointer whitespace-nowrap";
                         } else {
-                            btn.className = "pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer";
+                            btn.className = "pb-2 font-semibold text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap";
                         }
-                    }
-                    document.getElementById('watchlistTitle').innerText = `📋 自選股 ${tabNum} 管理 (上限 50 支)`;
-                    renderStocks();
+                    });
+                    renderContent();
                 }
 
-                function renderStocks() {
-                    const watchlists = getWatchlists();
-                    const stocks = watchlists[currentTab] || [];
-                    const container = document.getElementById('stockChips');
-                    document.getElementById('stockCount').innerText = `已儲存: ${stocks.length} / 50`;
+                function renderContent() {
+                    const area = document.getElementById('contentArea');
+                    if (currentTab === 'selector') {
+                        // 渲染分類選股介面
+                        let html = `
+                            <div class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border space-y-6">
+                                <div>
+                                    <h2 class="text-xl font-bold gold-text">🌟 專業選股分類專區</h2>
+                                    <p class="text-xs text-zinc-400 mt-1">點擊下方股票卡片即可**直接進行 AI 預測**，或將其加入自選股分頁中！</p>
+                                </div>
+                        `;
+                        categories.forEach(cat => {
+                            html += `
+                                <div class="space-y-3">
+                                    <h3 class="text-sm font-bold text-zinc-300 border-b border-zinc-900 pb-1">${cat.name}</h3>
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            `;
+                            cat.stocks.forEach(s => {
+                                html += `
+                                    <div class="bg-black border gold-border p-3 rounded-lg flex justify-between items-center hover:bg-zinc-900 transition">
+                                        <div class="cursor-pointer flex-1" onclick="runSinglePrediction('${s.symbol}')">
+                                            <div class="text-sm font-bold text-white">${s.name}</div>
+                                            <div class="text-xs gold-text">${s.symbol}</div>
+                                        </div>
+                                        <button onclick="quickAdd('${s.symbol}')" class="text-xs bg-zinc-800 hover:bg-[#d4af37] hover:text-black text-zinc-300 px-2.5 py-1 rounded transition font-bold" title="加入自選股1">＋加入</button>
+                                    </div>
+                                `;
+                            });
+                            html += `</div></div>`;
+                        });
+                        html += `</div>`;
+                        area.innerHTML = html;
+                    } else {
+                        // 渲染自選股 1~4 管理介面
+                        const watchlists = getWatchlists();
+                        const stocks = watchlists[currentTab] || [];
+                        area.innerHTML = `
+                            <div class="bg-zinc-950 p-6 rounded-2xl shadow-xl border gold-border">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h2 class="text-xl font-bold gold-text">📋 自選股 ${currentTab} 管理 (上限 50 支)</h2>
+                                    <span class="text-xs text-zinc-400">已儲存: ${stocks.length} / 50</span>
+                                </div>
 
+                                <div class="flex gap-3 mb-4">
+                                    <input type="text" id="tickerInput" placeholder="輸入股票代號 (例: 2330.TW, NVDA)" class="flex-1 px-4 py-2 rounded-lg bg-black border gold-border text-[#d4af37] focus:outline-none placeholder-zinc-600 text-sm">
+                                    <button onclick="addStock()" class="gold-bg text-black px-5 py-2 rounded-lg font-bold text-sm transition shadow cursor-pointer">新增股票</button>
+                                </div>
+
+                                <div id="stockChips" class="flex flex-wrap gap-2 mb-6 min-h-[50px] p-3 bg-black rounded-lg border border-zinc-900"></div>
+
+                                <button onclick="runBatchPrediction()" id="predictBtn" class="w-full gold-bg text-black font-extrabold py-3 rounded-lg transition shadow-xl text-lg cursor-pointer">🚀 開始一鍵多空預測</button>
+                            </div>
+                        `;
+                        renderStocksList(stocks);
+                    }
+                }
+
+                function renderStocksList(stocks) {
+                    const container = document.getElementById('stockChips');
+                    if (!container) return;
                     container.innerHTML = '';
                     if (stocks.length === 0) {
-                        container.innerHTML = '<span class="text-zinc-600 text-xs italic self-center">目前尚無自選股，請於上方輸入代號新增。</span>';
+                        container.innerHTML = '<span class="text-zinc-600 text-xs italic self-center">目前尚無自選股，可至「專業選股專區」挑選或於上方自行輸入。</span>';
                         return;
                     }
 
@@ -274,7 +352,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                         const chip = document.createElement('div');
                         chip.className = "flex items-center gap-2 bg-zinc-900 border gold-border px-3 py-1.5 rounded-md text-sm text-[#d4af37]";
                         chip.innerHTML = `
-                            <span>${ticker}</span>
+                            <span class="cursor-pointer font-bold hover:underline" onclick="runSinglePrediction('${ticker}')" title="點擊直接預測">${ticker}</span>
                             <button onclick="removeStock(${index})" class="text-zinc-500 hover:text-red-400 font-bold ml-1 cursor-pointer">&times;</button>
                         `;
                         container.appendChild(chip);
@@ -293,7 +371,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                         alert('每個自選股分頁最多只能儲存 50 支股票！');
                         return;
                     }
-
                     if (stocks.includes(ticker)) {
                         alert('此股票已在清單中！');
                         return;
@@ -303,52 +380,99 @@ def home(request: Request, user: str = Depends(verify_session)):
                     watchlists[currentTab] = stocks;
                     saveWatchlists(watchlists);
                     input.value = '';
-                    renderStocks();
+                    renderStocksList(stocks);
+                }
+
+                function quickAdd(ticker) {
+                    let watchlists = getWatchlists();
+                    let stocks = watchlists[1]; // 預設加到自選股 1
+                    if (!stocks.includes(ticker)) {
+                        stocks.push(ticker);
+                        saveWatchlists(watchlists);
+                        alert(`成功將 ${ticker} 加入「自選股 1」！`);
+                    } else {
+                        alert(`${ticker} 已經存在於「自選股 1」中！`);
+                    }
                 }
 
                 function removeStock(index) {
                     let watchlists = getWatchlists();
                     watchlists[currentTab].splice(index, 1);
                     saveWatchlists(watchlists);
-                    renderStocks();
+                    renderStocksList(watchlists[currentTab]);
                 }
 
-                async function runPrediction() {
+                async function runSinglePrediction(ticker) {
+                    await fetchAndDisplayPredictions(ticker);
+                }
+
+                async function runBatchPrediction() {
                     let watchlists = getWatchlists();
                     let stocks = watchlists[currentTab];
                     if (stocks.length === 0) {
                         alert('請先在此分頁新增至少一支股票！');
                         return;
                     }
+                    await fetchAndDisplayPredictions(stocks.join(','));
+                }
 
-                    const btn = document.getElementById('predictBtn');
+                async function fetchAndDisplayPredictions(tickerString) {
                     const resultSec = document.getElementById('resultSection');
                     const output = document.getElementById('outputResult');
+                    
+                    resultSec.classList.remove('hidden');
+                    output.innerHTML = '<div class="text-zinc-400 text-sm py-4 text-center">AI 模型運算分析中，請稍候...</div>';
+                    resultSec.scrollIntoView({ behavior: 'smooth' });
 
-                    btn.innerText = '分析運算中...';
-                    btn.disabled = true;
-
-                    const tickerString = stocks.join(',');
                     try {
                         const response = await fetch(`/predict/${encodeURIComponent(tickerString)}`);
                         const data = await response.json();
-                        resultSec.classList.remove('hidden');
-                        output.innerText = JSON.stringify(data, null, 2);
+                        
+                        let htmlContent = '';
+                        if (data.predictions && data.predictions.length > 0) {
+                            data.predictions.forEach(item => {
+                                if (item.error) {
+                                    htmlContent += `
+                                        <div class="p-4 rounded-xl bg-black border border-red-900 text-red-400 text-sm">
+                                            <b>標的 ${item.ticker}</b>：${item.error}
+                                        </div>
+                                    `;
+                                } else {
+                                    const maxColor = item.predicted_max_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                                    const minColor = item.predicted_min_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                                    
+                                    htmlContent += `
+                                        <div class="p-5 rounded-xl bg-black border gold-border space-y-2">
+                                            <div class="flex justify-between items-center border-b border-zinc-900 pb-2">
+                                                <span class="text-lg font-bold gold-text">${item.ticker}</span>
+                                                <span class="text-xs text-zinc-400">基準日期：${item.date}</span>
+                                            </div>
+                                            <p class="text-sm text-zinc-300 leading-relaxed pt-1">
+                                                最新收盤價為 <span class="font-bold text-white text-base">${item.latest_close}</span>。
+                                                經模型預估，在近期交易日內，向上最大可能漲幅約為 <span class="${maxColor} font-bold">+${item.predicted_max_return_pct}%</span>，推估高點目標價約落在 <span class="${maxColor} font-bold">${item.estimated_high_price}</span>；
+                                                向下風險防守價位則預估約為 <span class="${minColor} font-bold">${item.predicted_min_return_pct}%</span>，下檔支撐約落在 <span class="${minColor} font-bold">${item.estimated_low_price}</span>。
+                                            </p>
+                                        </div>
+                                    `;
+                                }
+                            });
+                        } else {
+                            htmlContent = '<div class="text-zinc-400 text-sm">無法取得預測資料。</div>';
+                        }
+                        
+                        output.innerHTML = htmlContent;
                     } catch (e) {
-                        alert('預測請求失敗，請稍後再試');
-                    } finally {
-                        btn.innerText = '🚀 開始一鍵多空預測';
-                        btn.disabled = false;
+                        output.innerHTML = '<div class="text-red-400 text-sm">預測請求失敗，請稍後再試。</div>';
                     }
                 }
 
-                renderStocks();
+                // 初始載入
+                renderContent();
             </script>
         </body>
     </html>
     """
 
-# 6. 核心預測 API（串接你的真實 AI 模型與 yfinance）
 @app.get("/predict/{tickers}")
 def predict_stocks(tickers: str, user: str = Depends(verify_session)):
     try:
@@ -416,7 +540,7 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
             results.append({
                 "ticker": t,
                 "date": latest_date,
-                "latest_close": latest_close,
+                "latest_close": round(latest_close, 2),
                 "predicted_max_return_pct": round(pred_max * 100, 2),
                 "predicted_min_return_pct": round(pred_min * 100, 2),
                 "estimated_high_price": round(latest_close * (1 + pred_max), 2),
