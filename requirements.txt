@@ -1,12 +1,11 @@
 fastapi
 uvicorn
 joblib
-scikit-learn
-pandas
 numpy
-requests
-pydantic
+pandas
 yfinance
+scikit-learn
 xgboost
 lightgbm
 statsmodels
+python-multipart
