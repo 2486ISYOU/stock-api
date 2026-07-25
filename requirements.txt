@@ -7,3 +7,6 @@ numpy
 requests
 pydantic
 yfinance
+xgboost
+lightgbm
+statsmodels
