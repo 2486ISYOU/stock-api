@@ -97,13 +97,13 @@ def disclaimer_page(user: str = Depends(verify_session)):
             <div class="bg-zinc-950 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-lg border gold-border flex flex-col h-[520px]">
                 <h2 class="text-xl sm:text-2xl font-bold text-center mb-4 gold-text">📜 使用者免責聲明</h2>
                 
-                <div id="termsBox" onscroll="checkScroll()" class="flex-1 bg-black border border-zinc-800 p-4 rounded-lg overflow-y-auto text-xs sm:text-sm text-zinc-300 space-y-3 mb-4">
+                <div id="termsBox" class="flex-1 bg-black border border-zinc-800 p-4 rounded-lg overflow-y-auto text-xs sm:text-sm text-zinc-300 space-y-3 mb-4">
                     <p class="font-bold gold-text">歡迎使用「股佳寶 (GoodJob)」系統。在您開始使用本系統提供的所有預測數據與分析工具前，請務必詳細閱讀以下條款：</p>
                     <p>1. <strong>參考性質</strong>：本系統所產出之所有多空預測結果、趨勢分析及數據指標，僅供學術研究與內部參考之用，不構成任何形式的投資建議、買賣邀約或保證獲利承諾。</p>
                     <p>2. <strong>投資風險</strong>：金融市場瞬息萬變，歷史數據與機器學習模型無法完全預測未來突發事件。使用者須自行評估市場風險，並對自身的投資決策負全責。</p>
                     <p>3. <strong>免責範圍</strong>：開發者與本系統營運團隊不對因使用本系統數據而導致的任何直接或間接財務損失承擔法律責任。</p>
                     <p>4. <strong>資料正確性</strong>：系統透過公開渠道（如 Yahoo Finance 等）抓取即時與歷史行情，若遇網路延遲或數據源異常，系統將不負預期中斷之責。</p>
-                    <p class="text-zinc-500 italic">【請完整捲動至最底部，方可解鎖同意按鈕】</p>
+                    <p class="text-zinc-500 italic">【請完整捲動至最底部，方可解鎖同意按鈕（若畫面過大無法捲動將自動解鎖）】</p>
                 </div>
 
                 <div class="space-y-3">
@@ -122,15 +122,26 @@ def disclaimer_page(user: str = Depends(verify_session)):
                 const enterBtn = document.getElementById('enterBtn');
                 let scrolledToBottom = false;
 
-                function checkScroll() {
-                    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 10) {
+                function checkScrollNeed() {
+                    if (box.scrollHeight <= box.clientHeight + 10) {
                         scrolledToBottom = true;
-                        checkbox.disabled = false;
-                        checkbox.parentElement.classList.remove('cursor-not-allowed');
-                        checkbox.classList.remove('cursor-not-allowed');
-                        agreeLabel.classList.remove('cursor-not-allowed');
-                        agreeLabel.classList.add('cursor-pointer', 'text-[#d4af37]');
+                        enableCheckbox();
                     }
+                }
+
+                function checkScroll() {
+                    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 30) {
+                        scrolledToBottom = true;
+                        enableCheckbox();
+                    }
+                }
+
+                function enableCheckbox() {
+                    checkbox.disabled = false;
+                    checkbox.parentElement.classList.remove('cursor-not-allowed');
+                    checkbox.classList.remove('cursor-not-allowed');
+                    agreeLabel.classList.remove('cursor-not-allowed');
+                    agreeLabel.classList.add('cursor-pointer', 'text-[#d4af37]');
                 }
 
                 function toggleBtn() {
@@ -149,6 +160,16 @@ def disclaimer_page(user: str = Depends(verify_session)):
                     document.cookie = "disclaimer=agreed; path=/";
                     window.location.href = "/";
                 }
+
+                box.addEventListener('scroll', checkScroll);
+
+                window.addEventListener('load', () => {
+                    setTimeout(checkScrollNeed, 100);
+                });
+
+                window.addEventListener('resize', () => {
+                    checkScrollNeed();
+                });
             </script>
         </body>
     </html>
@@ -228,7 +249,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                             { symbol: "2421.TW", name: "建準" }, { symbol: "3034.TW", name: "聯詠" }, { symbol: "2408.TW", name: "南亞科" },
                             { symbol: "2344.TW", name: "華邦電" }, { symbol: "2337.TW", name: "旺宏" }, { symbol: "6770.TW", name: "力積電" },
                             { symbol: "3037.TW", name: "欣興" }, { symbol: "3189.TW", name: "景碩" }, { symbol: "8046.TW", name: "南電" },
-                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TWO", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
+                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TW", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
                             { symbol: "3661.TW", name: "世芯-KY" }, { symbol: "3443.TW", name: "創意" }, { symbol: "5269.TW", name: "祥碩" },
                             { symbol: "4968.TW", name: "立積" }, { symbol: "2449.TW", name: "京元電子" }, { symbol: "6531.TW", name: "愛普*" },
                             { symbol: "3035.TW", name: "智原" }, { symbol: "6271.TW", name: "同欣電" }, { symbol: "8299.TW", name: "群聯" },
@@ -307,7 +328,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                     }
                 ];
 
-                // 建立全域對照表方便尋找中文名稱
                 const stockNameMap = {};
                 categories.forEach(cat => {
                     cat.stocks.forEach(s => {
@@ -404,7 +424,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                         return;
                     }
 
-                    // 批次取得即時股價
                     let priceData = {};
                     try {
                         const res = await fetch(`/prices/${stocks.join(',')}`);
@@ -419,7 +438,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                         const info = priceData[ticker];
                         const price = info ? info.price : '載入中...';
                         const isUp = info ? info.is_up : true;
-                        // 若漲就用紅色顯示價格 (符合用戶指示)
                         const priceColor = isUp ? 'text-rose-500' : 'text-emerald-400';
 
                         const card = document.createElement('div');
@@ -570,7 +588,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                     await renderStocksCards(watchlists[currentTab]);
                 }
 
-                // 初始載入
                 renderContent();
             </script>
         </body>
@@ -616,19 +633,28 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
     try:
         ticker_list = [t.strip().upper() for t in tickers.split(",")]
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
+        all_symbols = ticker_list + macro_tickers
         
-        all_data = yf.download(ticker_list + macro_tickers, period="6mo", interval="1d", auto_adjust=True, progress=False)
+        all_data = yf.download(all_symbols, period="6mo", interval="1d", auto_adjust=True, progress=False)
         
-        close_df = all_data['Close'].ffill().bfill()
-        high_df = all_data['High'].ffill().bfill()
-        low_df = all_data['Low'].ffill().bfill()
-        volume_df = all_data['Volume'].ffill().bfill()
+        def get_df_field(field_name):
+            if field_name not in all_data:
+                return pd.DataFrame()
+            df = all_data[field_name]
+            if isinstance(df, pd.Series):
+                df = df.to_frame(all_symbols[0] if len(all_symbols) == 1 else 'col')
+            return df
+
+        close_df = get_df_field('Close').ffill().bfill()
+        high_df = get_df_field('High').ffill().bfill()
+        low_df = get_df_field('Low').ffill().bfill()
+        volume_df = get_df_field('Volume').ffill().bfill()
         
         results = []
         
         for t in ticker_list:
             if t not in close_df.columns:
-                results.append({"ticker": t, "error": "找不到此標的資料"})
+                results.append({"ticker": t, "error": "找不到此標的資料或代號有誤"})
                 continue
                 
             c = close_df[t]
@@ -659,14 +685,14 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                                      abs(df['Low'] - df['Close'].shift(1))))
             df['ATR_14'] = tr.rolling(14).mean() / df['Close']
             
-            df['VIX_Level'] = close_df['^VIX']
-            df['VIX_Change_5D'] = close_df['^VIX'].pct_change(5)
-            df['SP500_Ret_5D'] = close_df['^GSPC'].pct_change(5)
-            df['TWII_Ret_5D'] = close_df['^TWII'].pct_change(5)
-            df['Oil_Price'] = close_df['CL=F']
-            df['Oil_Change_5D'] = close_df['CL=F'].pct_change(5)
-            df['ES_Ret_1D'] = close_df['ES=F'].pct_change(1)
-            df['NQ_Ret_1D'] = close_df['NQ=F'].pct_change(1)
+            df['VIX_Level'] = close_df['^VIX'] if '^VIX' in close_df.columns else 0
+            df['VIX_Change_5D'] = close_df['^VIX'].pct_change(5) if '^VIX' in close_df.columns else 0
+            df['SP500_Ret_5D'] = close_df['^GSPC'].pct_change(5) if '^GSPC' in close_df.columns else 0
+            df['TWII_Ret_5D'] = close_df['^TWII'].pct_change(5) if '^TWII' in close_df.columns else 0
+            df['Oil_Price'] = close_df['CL=F'] if 'CL=F' in close_df.columns else 0
+            df['Oil_Change_5D'] = close_df['CL=F'].pct_change(5) if 'CL=F' in close_df.columns else 0
+            df['ES_Ret_1D'] = close_df['ES=F'].pct_change(1) if 'ES=F' in close_df.columns else 0
+            df['NQ_Ret_1D'] = close_df['NQ=F'].pct_change(1) if 'NQ=F' in close_df.columns else 0
             
             latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
             latest_close = float(df.iloc[-1]['Close'])
