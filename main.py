@@ -7,10 +7,12 @@ import pandas as pd
 import yfinance as yf
 import warnings
 import secrets
+from datetime import datetime, time
+import pytz
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.5")
+app = FastAPI(title="股佳寶", version="2.6")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -27,6 +29,27 @@ feature_cols = [
     'Oil_Price', 'Oil_Change_5D',
     'ES_Ret_1D', 'NQ_Ret_1D'
 ]
+
+# 記憶體快取：儲存盤後預測結果，避免盤中重複呼叫 API
+prediction_cache = {
+    "update_time": None,
+    "date": None,
+    "data": {}
+}
+
+def check_market_hours():
+    """檢查是否為台股交易時間 (週一至週五 09:00 - 13:30)"""
+    tz = pytz.timezone('Asia/Taipei')
+    now = datetime.now(tz)
+    
+    # 週末不屬於盤中
+    if now.weekday() >= 5:
+        return False
+        
+    market_open = time(9, 0)
+    market_close = time(13, 30)
+    
+    return market_open <= now.time() <= market_close
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
@@ -199,7 +222,7 @@ def home(request: Request, user: str = Depends(verify_session)):
         <body class="bg-black text-[#d4af37] min-h-screen flex flex-col justify-between font-sans selection:bg-[#d4af37] selection:text-black">
             
             <div class="max-w-4xl mx-auto w-full p-3 sm:p-6">
-                <header class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                <header class="flex justify-between items-center mb-4 border-b border-zinc-800 pb-4">
                     <div>
                         <h1 class="text-2xl sm:text-3xl font-bold tracking-wider gold-text">⚜️ 股佳寶 ⚜️</h1>
                         <p class="text-xs text-zinc-400 mt-0.5">GoodJob | 頂級多空預測引擎</p>
@@ -208,6 +231,14 @@ def home(request: Request, user: str = Depends(verify_session)):
                         <a href="/login" class="text-xs text-zinc-500 hover:text-[#d4af37] transition">重新登入</a>
                     </div>
                 </header>
+
+                <!-- 盤中提示橫幅 (Market Notice Banner) -->
+                <div id="marketNoticeBanner" class="hidden mb-4 p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs sm:text-sm text-amber-300 flex items-center justify-between gap-2 shadow-lg">
+                    <div class="flex items-center gap-2">
+                        <span>⚠️</span>
+                        <span id="marketNoticeText">台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。</span>
+                    </div>
+                </div>
 
                 <!-- 分頁按鈕列 -->
                 <div class="flex border-b border-zinc-800 mb-6 gap-3 sm:gap-6 overflow-x-auto pb-2 scrollbar-none">
@@ -238,6 +269,29 @@ def home(request: Request, user: str = Depends(verify_session)):
             <script>
                 let currentTab = 1;
 
+                // 檢查是否為台股盤中時間 (台灣時間 週一~週五 09:00 ~ 13:30)
+                function checkMarketStatus() {
+                    const now = new Date();
+                    // 轉成台灣時間
+                    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+                    const twTime = new Date(utc + (3600000 * 8));
+                    
+                    const day = twTime.getDay(); // 0為週日, 6為週六
+                    const hour = twTime.getHours();
+                    const minute = twTime.getMinutes();
+                    const timeVal = hour * 100 + minute;
+
+                    const isWeekday = (day >= 1 && day <= 5);
+                    const isMarketTime = (timeVal >= 900 && timeVal <= 1330);
+
+                    const banner = document.getElementById('marketNoticeBanner');
+                    if (isWeekday && isMarketTime) {
+                        banner.classList.remove('hidden');
+                    } else {
+                        banner.classList.add('hidden');
+                    }
+                }
+
                 const categories = [
                     {
                         name: "🇹🇼 台股 - 半導體與電子零組件 (核心權值)",
@@ -249,7 +303,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                             { symbol: "2421.TW", name: "建準" }, { symbol: "3034.TW", name: "聯詠" }, { symbol: "2408.TW", name: "南亞科" },
                             { symbol: "2344.TW", name: "華邦電" }, { symbol: "2337.TW", name: "旺宏" }, { symbol: "6770.TW", name: "力積電" },
                             { symbol: "3037.TW", name: "欣興" }, { symbol: "3189.TW", name: "景碩" }, { symbol: "8046.TW", name: "南電" },
-                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TWO", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
+                            { symbol: "6239.TW", name: "力成" }, { symbol: "5425.TW", name: "台半" }, { symbol: "3533.TW", name: "嘉澤" },
                             { symbol: "3661.TW", name: "世芯-KY" }, { symbol: "3443.TW", name: "創意" }, { symbol: "5269.TW", name: "祥碩" },
                             { symbol: "4968.TW", name: "立積" }, { symbol: "2449.TW", name: "京元電子" }, { symbol: "6531.TW", name: "愛普*" },
                             { symbol: "3035.TW", name: "智原" }, { symbol: "6271.TW", name: "同欣電" }, { symbol: "8299.TW", name: "群聯" },
@@ -363,6 +417,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                 }
 
                 async function renderContent() {
+                    checkMarketStatus();
                     const area = document.getElementById('contentArea');
                     if (currentTab === 'selector') {
                         let html = `
@@ -632,8 +687,25 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
 def predict_stocks(tickers: str, user: str = Depends(verify_session)):
     try:
         ticker_list = [t.strip().upper() for t in tickers.split(",")]
+        tz = pytz.timezone('Asia/Taipei')
+        today_str = datetime.now(tz).strftime('%Y-%m-%d')
+
+        # 檢查快取是否有該標的之今日盤後預測結果
+        results = []
+        uncached_tickers = []
+        
+        for t in ticker_list:
+            if prediction_cache["date"] == today_str and t in prediction_cache["data"]:
+                results.append(prediction_cache["data"][t])
+            else:
+                uncached_tickers.append(t)
+
+        if not uncached_tickers:
+            return {"predictions": results}
+
+        # 針對未快取的標的進行運算
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
-        all_symbols = ticker_list + macro_tickers
+        all_symbols = uncached_tickers + macro_tickers
         
         all_data = yf.download(all_symbols, period="6mo", interval="1d", auto_adjust=True, progress=False)
         
@@ -650,11 +722,10 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         low_df = get_df_field('Low').ffill().bfill()
         volume_df = get_df_field('Volume').ffill().bfill()
         
-        results = []
-        
-        for t in ticker_list:
+        for t in uncached_tickers:
             if t not in close_df.columns:
-                results.append({"ticker": t, "error": "找不到此標的資料或代號有誤"})
+                err_res = {"ticker": t, "error": "找不到此標的資料或代號有誤"}
+                results.append(err_res)
                 continue
                 
             c = close_df[t]
@@ -701,7 +772,7 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
             pred_max = float(reg_high.predict(latest_features)[0])
             pred_min = float(reg_low.predict(latest_features)[0])
             
-            results.append({
+            item_res = {
                 "ticker": t,
                 "date": latest_date,
                 "latest_close": round(latest_close, 2),
@@ -709,7 +780,14 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                 "predicted_min_return_pct": round(pred_min * 100, 2),
                 "estimated_high_price": round(latest_close * (1 + pred_max), 2),
                 "estimated_low_price": round(latest_close * (1 + pred_min), 2)
-            })
+            }
+            results.append(item_res)
+            
+            # 更新快取
+            if prediction_cache["date"] != today_str:
+                prediction_cache["date"] = today_str
+                prediction_cache["data"] = {}
+            prediction_cache["data"][t] = item_res
             
         return {"predictions": results}
         
