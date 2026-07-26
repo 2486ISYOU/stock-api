@@ -508,53 +508,76 @@ def home(request: Request, user: str = Depends(verify_session)):
                         
                         let htmlContent = '';
 
-                       // 依股票市場判斷交易時間
+                       // 判斷股票市場交易時間
 const now = new Date();
 
 let isMarketTime = false;
 let warningText = "";
 
-// 台股
-if (ticker.toUpperCase().endsWith(".TW")) {
+const stockCode = ticker.toUpperCase();
 
-    const taiwanTime = new Date(
-        now.toLocaleString("en-US", { timeZone: "Asia/Taipei" })
+
+// =====================
+// 台股
+// =====================
+if (stockCode.endsWith(".TW")) {
+
+    const twTime = new Date(
+        now.toLocaleString("en-US", {
+            timeZone: "Asia/Taipei"
+        })
     );
 
-    const day = taiwanTime.getDay();
-    const minutes = taiwanTime.getHours() * 60 + taiwanTime.getMinutes();
+    const twDay = twTime.getDay();
+    const twMinutes =
+        twTime.getHours() * 60 +
+        twTime.getMinutes();
+
 
     isMarketTime =
-        day >= 1 &&
-        day <= 5 &&
-        minutes >= (8 * 60 + 30) &&
-        minutes < (15 * 60);
+        twDay >= 1 &&
+        twDay <= 5 &&
+        twMinutes >= 510 &&   // 08:30
+        twMinutes < 900;      // 15:00
+
 
     warningText =
         "台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。";
 
 }
 
+
+// =====================
 // 美股
+// =====================
 else {
 
     const usTime = new Date(
-        now.toLocaleString("en-US", { timeZone: "America/New_York" })
+        now.toLocaleString("en-US", {
+            timeZone: "America/New_York"
+        })
     );
 
-    const day = usTime.getDay();
-    const minutes = usTime.getHours() * 60 + usTime.getMinutes();
+
+    const usDay = usTime.getDay();
+
+    const usMinutes =
+        usTime.getHours() * 60 +
+        usTime.getMinutes();
+
 
     isMarketTime =
-        day >= 1 &&
-        day <= 5 &&
-        minutes >= (9 * 60 + 30) &&
-        minutes < (16 * 60);
+        usDay >= 1 &&
+        usDay <= 5 &&
+        usMinutes >= 570 &&   // 09:30
+        usMinutes < 960;      // 16:00
+
 
     warningText =
         "美股盤中即時數據計算中，目前顯示的是上一交易日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於美股收盤後更新。";
 
 }
+
 
 
 if (isMarketTime) {
