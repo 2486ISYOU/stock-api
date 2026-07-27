@@ -508,26 +508,60 @@ def home(request: Request, user: str = Depends(verify_session)):
                         
                         let htmlContent = '';
 
-                       // 依台灣時間判斷是否為台股盤中 (08:30 ~ 15:00)
+                       // 依股票市場判斷交易時間
 const now = new Date();
-const taiwanTime = new Date(
-    now.toLocaleString("en-US", { timeZone: "Asia/Taipei" })
-);
 
-const day = taiwanTime.getDay(); // 0=星期日、6=星期六
-const minutes = taiwanTime.getHours() * 60 + taiwanTime.getMinutes();
+let isMarketTime = false;
+let warningText = "";
 
-const isMarketTime =
-    day >= 1 &&
-    day <= 5 &&
-    minutes >= (8 * 60 + 30) &&
-    minutes < (15 * 60);
+// 台股
+if (ticker.toUpperCase().endsWith(".TW")) {
+
+    const taiwanTime = new Date(
+        now.toLocaleString("en-US", { timeZone: "Asia/Taipei" })
+    );
+
+    const day = taiwanTime.getDay();
+    const minutes = taiwanTime.getHours() * 60 + taiwanTime.getMinutes();
+
+    isMarketTime =
+        day >= 1 &&
+        day <= 5 &&
+        minutes >= (8 * 60 + 30) &&
+        minutes < (15 * 60);
+
+    warningText =
+        "台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。";
+
+}
+
+// 美股
+else {
+
+    const usTime = new Date(
+        now.toLocaleString("en-US", { timeZone: "America/New_York" })
+    );
+
+    const day = usTime.getDay();
+    const minutes = usTime.getHours() * 60 + usTime.getMinutes();
+
+    isMarketTime =
+        day >= 1 &&
+        day <= 5 &&
+        minutes >= (9 * 60 + 30) &&
+        minutes < (16 * 60);
+
+    warningText =
+        "美股盤中即時數據計算中，目前顯示的是上一交易日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於美股收盤後更新。";
+
+}
+
 
 if (isMarketTime) {
     htmlContent += `
         <div class="p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs text-amber-300 flex items-center gap-2 shadow">
             <span>⚠️</span>
-            <span>台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。</span>
+            <span>${warningText}</span>
         </div>
     `;
 }
