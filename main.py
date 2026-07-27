@@ -12,7 +12,7 @@ import pytz
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.6")
+app = FastAPI(title="股佳寶", version="2.7")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -30,26 +30,12 @@ feature_cols = [
     'ES_Ret_1D', 'NQ_Ret_1D'
 ]
 
-# 記憶體快取：儲存盤後預測結果，避免盤中重複呼叫 API
+# 記憶體快取：儲存盤後預測結果，避免重複呼叫 API
 prediction_cache = {
     "update_time": None,
     "date": None,
     "data": {}
 }
-
-def check_market_hours():
-    """檢查是否為台股交易時間 (週一至週五 09:00 - 13:30)"""
-    tz = pytz.timezone('Asia/Taipei')
-    now = datetime.now(tz)
-    
-    # 週末不屬於盤中
-    if now.weekday() >= 5:
-        return False
-        
-    market_open = time(9, 0)
-    market_close = time(13, 30)
-    
-    return market_open <= now.time() <= market_close
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
@@ -232,14 +218,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                     </div>
                 </header>
 
-                <!-- 盤中提示橫幅 (Market Notice Banner) -->
-                <div id="marketNoticeBanner" class="hidden mb-4 p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs sm:text-sm text-amber-300 flex items-center justify-between gap-2 shadow-lg">
-                    <div class="flex items-center gap-2">
-                        <span>⚠️</span>
-                        <span id="marketNoticeText">台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。</span>
-                    </div>
-                </div>
-
                 <!-- 分頁按鈕列 -->
                 <div class="flex border-b border-zinc-800 mb-6 gap-3 sm:gap-6 overflow-x-auto pb-2 scrollbar-none">
                     <button onclick="switchTab(1)" id="tabBtn1" class="pb-2 font-semibold text-sm sm:text-lg tab-active transition cursor-pointer whitespace-nowrap">自選股 1</button>
@@ -268,29 +246,6 @@ def home(request: Request, user: str = Depends(verify_session)):
 
             <script>
                 let currentTab = 1;
-
-                // 檢查是否為台股盤中時間 (台灣時間 週一~週五 09:00 ~ 13:30)
-                function checkMarketStatus() {
-                    const now = new Date();
-                    // 轉成台灣時間
-                    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-                    const twTime = new Date(utc + (3600000 * 8));
-                    
-                    const day = twTime.getDay(); // 0為週日, 6為週六
-                    const hour = twTime.getHours();
-                    const minute = twTime.getMinutes();
-                    const timeVal = hour * 100 + minute;
-
-                    const isWeekday = (day >= 1 && day <= 5);
-                    const isMarketTime = (timeVal >= 900 && timeVal <= 1330);
-
-                    const banner = document.getElementById('marketNoticeBanner');
-                    if (isWeekday && isMarketTime) {
-                        banner.classList.remove('hidden');
-                    } else {
-                        banner.classList.add('hidden');
-                    }
-                }
 
                 const categories = [
                     {
@@ -417,7 +372,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                 }
 
                 async function renderContent() {
-                    checkMarketStatus();
                     const area = document.getElementById('contentArea');
                     if (currentTab === 'selector') {
                         let html = `
@@ -553,6 +507,26 @@ def home(request: Request, user: str = Depends(verify_session)):
                         const data = await response.json();
                         
                         let htmlContent = '';
+
+                        // 🌟 檢查是否為台股盤中時間 (台灣時間 週一~週五 09:00 ~ 13:30)
+                        const now = new Date();
+                        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+                        const twTime = new Date(utc + (3600000 * 8));
+                        const day = twTime.getDay();
+                        const hour = twTime.getHours();
+                        const minute = twTime.getMinutes();
+                        const timeVal = hour * 100 + minute;
+                        const isMarketTime = (day >= 1 && day <= 5) && (timeVal >= 900 && timeVal <= 1330);
+
+                        if (isMarketTime) {
+                            htmlContent += `
+                                <div class="p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs text-amber-300 flex items-center gap-2 shadow">
+                                    <span>⚠️</span>
+                                    <span>台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。</span>
+                                </div>
+                            `;
+                        }
+                        
                         if (data.predictions && data.predictions.length > 0) {
                             data.predictions.forEach(item => {
                                 if (item.error) {
@@ -577,7 +551,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                                 }
                             });
                         } else {
-                            htmlContent = '<div class="text-zinc-400 text-xs">無法取得預測資料。</div>';
+                            htmlContent += '<div class="text-zinc-400 text-xs">無法取得預測資料。</div>';
                         }
                         output.innerHTML = htmlContent;
                     } catch (e) {
