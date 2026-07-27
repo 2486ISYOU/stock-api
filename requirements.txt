@@ -9,4 +9,3 @@ xgboost
 lightgbm
 statsmodels
 python-multipart
-scikit-learn==1.5.1
