@@ -507,13 +507,15 @@ def home(request: Request, user: str = Depends(verify_session)):
                         const data = await response.json();
                         
                         let htmlContent = '';
-                        const isMarketTime = data.is_market_time || false;
+
+                        // 🌟 【測試模式】強制設為 true，確保隨時點擊都能看到黃色提醒框
+                        const isMarketTime = true; 
 
                         if (isMarketTime) {
                             htmlContent += `
                                 <div class="p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs text-amber-300 flex items-center gap-2 shadow">
                                     <span>⚠️</span>
-                                    <span>盤中數據即時計算中，目前顯示昨日收盤後的預測結果。最新盤後預測於每日 15:30 更新。</span>
+                                    <span>台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。</span>
                                 </div>
                             `;
                         }
@@ -523,228 +525,238 @@ def home(request: Request, user: str = Depends(verify_session)):
                                 if (item.error) {
                                     htmlContent += `<div class="p-3 rounded-lg bg-black border border-red-900 text-red-400 text-xs"><b>${item.ticker}</b>：${item.error}</div>`;
                                 } else {
-                                    const predHigh = parseFloat(item.pred_high).toFixed(2);
-                                    const predLow = parseFloat(item.pred_low).toFixed(2);
-                                    const lastPrice = parseFloat(item.last_price).toFixed(2);
-                                    const isUp = predHigh > lastPrice;
-
+                                    const maxColor = item.predicted_max_return_pct >= 0 ? 'text-rose-500' : 'text-emerald-400';
+                                    const minColor = item.predicted_min_return_pct >= 0 ? 'text-rose-500' : 'text-emerald-400';
+                                    
                                     htmlContent += `
-                                        <div class="bg-black p-4 rounded-xl border border-zinc-800 space-y-3">
-                                            <div class="flex justify-between items-center border-b border-zinc-800 pb-2">
-                                                <span class="text-xs text-zinc-400">基準收盤價</span>
-                                                <span class="font-bold text-white text-sm">${lastPrice}</span>
+                                        <div class="p-4 rounded-xl bg-black border gold-border space-y-2">
+                                            <div class="flex justify-between items-center border-b border-zinc-900 pb-2">
+                                                <span class="font-bold gold-text">${name} (${item.ticker})</span>
+                                                <span class="text-xs text-zinc-400">基準日期：${item.date}</span>
                                             </div>
-                                            <div class="grid grid-cols-2 gap-3 text-center text-xs py-1">
-                                                <div class="bg-zinc-900/80 p-2.5 rounded-lg border border-zinc-800">
-                                                    <div class="text-zinc-400 text-[11px] mb-0.5">預測最高價</div>
-                                                    <div class="text-rose-400 font-bold text-base sm:text-lg">${predHigh}</div>
-                                                </div>
-                                                <div class="bg-zinc-900/80 p-2.5 rounded-lg border border-zinc-800">
-                                                    <div class="text-zinc-400 text-[11px] mb-0.5">預測最低價</div>
-                                                    <div class="text-emerald-400 font-bold text-base sm:text-lg">${predLow}</div>
-                                                </div>
-                                            </div>
-                                            <div class="text-xs text-zinc-400 text-center pt-1">
-                                                預期區間：<span class="gold-text font-semibold">${predLow} ~ ${predHigh}</span>
-                                            </div>
+                                            <p class="text-xs sm:text-sm text-zinc-300 leading-relaxed pt-1">
+                                                最新收盤價為 <span class="font-bold text-white">${item.latest_close}</span>。
+                                                經模型預估，在未來 2 個交易日內，向上最大可能漲幅約為 <span class="${maxColor} font-bold">+${item.predicted_max_return_pct}%</span>，推估高點目標價約落在 <span class="${maxColor} font-bold">${item.estimated_high_price}</span>；
+                                                向下風險防守價位則預估約為 <span class="${minColor} font-bold">${item.predicted_min_return_pct}%</span>，下檔支撐約落在 <span class="${minColor} font-bold">${item.estimated_low_price}</span>。
+                                            </p>
                                         </div>
                                     `;
                                 }
                             });
                         } else {
-                            htmlContent += '<div class="text-zinc-400 text-xs py-2 text-center">目前無可用的預測數據。</div>';
+                            htmlContent += '<div class="text-zinc-400 text-xs">無法取得預測資料。</div>';
                         }
                         output.innerHTML = htmlContent;
-                    } catch (err) {
-                        output.innerHTML = `<div class="p-3 bg-red-950/50 border border-red-800 text-red-400 text-xs rounded-lg text-center">預測連線失敗：${err.message}</div>`;
+                    } catch (e) {
+                        output.innerHTML = '<div class="text-red-400 text-xs">預測請求失敗，請稍後再試。</div>';
                     }
                 }
 
                 function promptAddStock(symbol, name) {
-                    const watchlists = getWatchlists();
-                    const targetTab = prompt(`請選擇要加入「${name} (${symbol})」的自選股分頁 (輸入 1 ~ 4)：`, currentTab === 'selector' ? '1' : currentTab);
-                    if (!targetTab || !['1', '2', '3', '4'].includes(targetTab)) return;
-                    
-                    if (!watchlists[targetTab]) watchlists[targetTab] = [];
-                    if (watchlists[targetTab].includes(symbol)) {
-                        alert(`【${symbol}】已存在於自選股 ${targetTab} 中！`);
+                    let targetTab = prompt(`請選擇要將「${name} (${symbol})」加入哪一個自選股分頁？\n請輸入數字 1、2、3 或 4：`, "1");
+                    if (!targetTab) return;
+                    targetTab = targetTab.trim();
+                    if (!['1', '2', '3', '4'].includes(targetTab)) {
+                        alert('輸入錯誤，請輸入 1 到 4 之間的數字！');
                         return;
                     }
-                    if (watchlists[targetTab].length >= 50) {
-                        alert(`自選股 ${targetTab} 已達上限 (50 檔)！`);
+
+                    let watchlists = getWatchlists();
+                    let stocks = watchlists[targetTab];
+
+                    if (stocks.length >= 50) {
+                        alert(`「自選股 ${targetTab}」已達上限 50 支！`);
                         return;
                     }
-                    watchlists[targetTab].push(symbol);
+                    if (stocks.includes(symbol)) {
+                        alert(`${symbol} 已經存在於「自選股 ${targetTab}」中！`);
+                        return;
+                    }
+
+                    stocks.push(symbol);
+                    watchlists[targetTab] = stocks;
                     saveWatchlists(watchlists);
-                    alert(`成功將【${name}】加入自選股 ${targetTab}！`);
+                    alert(`成功將 ${symbol} (${name}) 加入「自選股 ${targetTab}」！`);
                 }
 
-                function addStock() {
+                async function addStock() {
                     const input = document.getElementById('tickerInput');
-                    const symbol = input.value.trim().toUpperCase();
-                    if (!symbol) return;
-                    
-                    const watchlists = getWatchlists();
-                    if (watchlists[currentTab].includes(symbol)) {
-                        alert(`【${symbol}】已在目前的自選股中！`);
+                    const ticker = input.value.trim().toUpperCase();
+                    if (!ticker) return;
+
+                    let watchlists = getWatchlists();
+                    let stocks = watchlists[currentTab];
+
+                    if (stocks.length >= 50) {
+                        alert('每個自選股分頁最多只能儲存 50 支股票！');
                         return;
                     }
-                    if (watchlists[currentTab].length >= 50) {
-                        alert(`自選股 ${currentTab} 已達上限 (50 檔)！`);
+                    if (stocks.includes(ticker)) {
+                        alert('此股票已在清單中！');
                         return;
                     }
-                    watchlists[currentTab].push(symbol);
+
+                    stocks.push(ticker);
+                    watchlists[currentTab] = stocks;
                     saveWatchlists(watchlists);
                     input.value = '';
-                    renderContent();
+                    await renderStocksCards(stocks);
                 }
 
-                function removeStock(index) {
-                    const watchlists = getWatchlists();
+                async function removeStock(index) {
+                    let watchlists = getWatchlists();
                     watchlists[currentTab].splice(index, 1);
                     saveWatchlists(watchlists);
-                    renderContent();
+                    await renderStocksCards(watchlists[currentTab]);
                 }
 
-                // 頁面初次載入
-                switchTab(1);
+                renderContent();
             </script>
         </body>
     </html>
     """
 
-# --- 後端 API 實作區塊 ---
-
-def get_feature_vector(ticker: str):
-    """抓取股價歷史與宏觀數據，計算 ML 模型輸入向量"""
-    stock = yf.Ticker(ticker)
-    df = stock.history(period="60d")
-    if df.empty or len(df) < 20:
-        raise ValueError(f"無法取得足夠的歷史資料 ({ticker})")
-
-    close = df['Close']
-    vol = df['Volume']
-    high = df['High']
-    low = df['Low']
-
-    ret_1d = close.pct_change(1).iloc[-1]
-    ret_5d = close.pct_change(5).iloc[-1]
-    ret_20d = close.pct_change(20).iloc[-1]
-
-    sma5 = close.rolling(5).mean().iloc[-1]
-    sma20 = close.rolling(20).mean().iloc[-1]
-    last_price = close.iloc[-1]
-
-    bias_5d = (last_price - sma5) / sma5
-    bias_20d = (last_price - sma20) / sma20
-
-    vol_5d_mean = vol.rolling(5).mean().iloc[-1]
-    vol_change_5d = (vol.iloc[-1] - vol_5d_mean) / (vol_5d_mean + 1e-8)
-
-    # RSI (14)
-    delta = close.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain.iloc[-1] / (loss.iloc[-1] + 1e-8)
-    rsi_14 = 100 - (100 / (1 + rs))
-
-    # ATR (14)
-    tr = pd.concat([
-        high - low,
-        (high - close.shift(1)).abs(),
-        (low - close.shift(1)).abs()
-    ], axis=1).max(axis=1)
-    atr_14 = tr.rolling(14).mean().iloc[-1]
-
-    # 外圍宏觀數據 (VIX, S&P 500, 加權指數, 原油, 期貨)
-    macro_tickers = yf.download(['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F'], period="10d", progress=False)['Close']
-    
-    vix_level = macro_tickers['^VIX'].iloc[-1] if '^VIX' in macro_tickers else 20.0
-    vix_change_5d = macro_tickers['^VIX'].pct_change(5).iloc[-1] if '^VIX' in macro_tickers else 0.0
-    sp500_ret_5d = macro_tickers['^GSPC'].pct_change(5).iloc[-1] if '^GSPC' in macro_tickers else 0.0
-    twii_ret_5d = macro_tickers['^TWII'].pct_change(5).iloc[-1] if '^TWII' in macro_tickers else 0.0
-    oil_price = macro_tickers['CL=F'].iloc[-1] if 'CL=F' in macro_tickers else 70.0
-    oil_change_5d = macro_tickers['CL=F'].pct_change(5).iloc[-1] if 'CL=F' in macro_tickers else 0.0
-    es_ret_1d = macro_tickers['ES=F'].pct_change(1).iloc[-1] if 'ES=F' in macro_tickers else 0.0
-    nq_ret_1d = macro_tickers['NQ=F'].pct_change(1).iloc[-1] if 'NQ=F' in macro_tickers else 0.0
-
-    features = [
-        ret_1d, ret_5d, ret_20d,
-        bias_5d, bias_20d, vol_change_5d, rsi_14, atr_14,
-        vix_level, vix_change_5d, sp500_ret_5d, twii_ret_5d,
-        oil_price, oil_change_5d,
-        es_ret_1d, nq_ret_1d
-    ]
-
-    return np.array(features).reshape(1, -1), last_price
-
 @app.get("/prices/{tickers}")
-def get_prices(tickers: str, user: str = Depends(verify_session)):
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
-    if not ticker_list:
-        return {"prices": {}}
-
-    result = {}
+def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
     try:
-        data = yf.download(ticker_list, period="5d", progress=False)
-        for ticker in ticker_list:
-            try:
-                if len(ticker_list) == 1:
-                    close_series = data['Close']
-                else:
-                    close_series = data['Close'][ticker]
-                
-                valid_closes = close_series.dropna()
-                if len(valid_closes) >= 2:
-                    current_price = valid_closes.iloc[-1]
-                    prev_price = valid_closes.iloc[-2]
-                    is_up = current_price >= prev_price
-                    result[ticker] = {
-                        "price": f"{current_price:.2f}",
-                        "is_up": bool(is_up)
+        ticker_list = [t.strip().upper() for t in tickers.split(",")]
+        if not ticker_list or ticker_list == ['']:
+            return {"prices": {}}
+        
+        data = yf.download(ticker_list, period="5d", interval="1d", auto_adjust=True, progress=False)
+        close_df = data['Close']
+        if isinstance(close_df, pd.Series):
+            close_df = close_df.to_frame(ticker_list[0])
+        
+        res = {}
+        for t in ticker_list:
+            if t in close_df.columns:
+                s = close_df[t].dropna()
+                if len(s) >= 2:
+                    curr = float(s.iloc[-1])
+                    prev = float(s.iloc[-2])
+                    change = curr - prev
+                    res[t] = {
+                        "price": round(curr, 2),
+                        "is_up": change >= 0
                     }
-                elif len(valid_closes) == 1:
-                    result[ticker] = {
-                        "price": f"{valid_closes.iloc[-1]:.2f}",
+                elif len(s) == 1:
+                    curr = float(s.iloc[-1])
+                    res[t] = {
+                        "price": round(curr, 2),
                         "is_up": True
                     }
-            except Exception:
-                result[ticker] = {"price": "N/A", "is_up": True}
+        return {"prices": res}
     except Exception as e:
-        print("Price Fetching Error:", e)
+        return {"prices": {}, "error": str(e)}
 
-    return {"prices": result}
-
-@app.get("/predict/{ticker}")
-def predict_stock(ticker: str, user: str = Depends(verify_session)):
-    ticker = ticker.upper()
-    
-    # 判斷是否為台股盤中交易時間 (09:00 - 13:30)
-    tz = pytz.timezone('Asia/Taipei')
-    now = datetime.now(tz)
-    is_market_time = (now.weekday() < 5) and (time(9, 0) <= now.time() <= time(13, 30))
-
+@app.get("/predict/{tickers}")
+def predict_stocks(tickers: str, user: str = Depends(verify_session)):
     try:
-        features, last_price = get_feature_vector(ticker)
-        pred_h = float(reg_high.predict(features)[0])
-        pred_l = float(reg_low.predict(features)[0])
+        ticker_list = [t.strip().upper() for t in tickers.split(",")]
+        tz = pytz.timezone('Asia/Taipei')
+        today_str = datetime.now(tz).strftime('%Y-%m-%d')
 
-        return {
-            "ticker": ticker,
-            "is_market_time": is_market_time,
-            "predictions": [{
-                "ticker": ticker,
-                "last_price": round(last_price, 2),
-                "pred_high": round(pred_h, 2),
-                "pred_low": round(pred_l, 2)
-            }]
-        }
+        # 檢查快取是否有該標的之今日盤後預測結果
+        results = []
+        uncached_tickers = []
+        
+        for t in ticker_list:
+            if prediction_cache["date"] == today_str and t in prediction_cache["data"]:
+                results.append(prediction_cache["data"][t])
+            else:
+                uncached_tickers.append(t)
+
+        if not uncached_tickers:
+            return {"predictions": results}
+
+        # 針對未快取的標的進行運算
+        macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
+        all_symbols = uncached_tickers + macro_tickers
+        
+        all_data = yf.download(all_symbols, period="6mo", interval="1d", auto_adjust=True, progress=False)
+        
+        def get_df_field(field_name):
+            if field_name not in all_data:
+                return pd.DataFrame()
+            df = all_data[field_name]
+            if isinstance(df, pd.Series):
+                df = df.to_frame(all_symbols[0] if len(all_symbols) == 1 else 'col')
+            return df
+
+        close_df = get_df_field('Close').ffill().bfill()
+        high_df = get_df_field('High').ffill().bfill()
+        low_df = get_df_field('Low').ffill().bfill()
+        volume_df = get_df_field('Volume').ffill().bfill()
+        
+        for t in uncached_tickers:
+            if t not in close_df.columns:
+                err_res = {"ticker": t, "error": "找不到此標的資料或代號有誤"}
+                results.append(err_res)
+                continue
+                
+            c = close_df[t]
+            h = high_df[t]
+            l = low_df[t]
+            v = volume_df[t]
+            
+            df = pd.DataFrame({'Close': c, 'High': h, 'Low': l, 'Volume': v})
+            
+            df['Ret_1D'] = df['Close'].pct_change(1)
+            df['Ret_5D'] = df['Close'].pct_change(5)
+            df['Ret_20D'] = df['Close'].pct_change(20)
+            
+            ma5 = df['Close'].rolling(5).mean()
+            ma20 = df['Close'].rolling(20).mean()
+            df['Bias_5D'] = (df['Close'] - ma5) / ma5
+            df['Bias_20D'] = (df['Close'] - ma20) / ma20
+            df['Vol_Change_5D'] = df['Volume'].pct_change(5)
+            
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rs = gain / (loss + 1e-9)
+            df['RSI_14'] = 100 - (100 / (1 + rs))
+            
+            tr = np.maximum(df['High'] - df['Low'], 
+                            np.maximum(abs(df['High'] - df['Close'].shift(1)), 
+                                     abs(df['Low'] - df['Close'].shift(1))))
+            df['ATR_14'] = tr.rolling(14).mean() / df['Close']
+            
+            df['VIX_Level'] = close_df['^VIX'] if '^VIX' in close_df.columns else 0
+            df['VIX_Change_5D'] = close_df['^VIX'].pct_change(5) if '^VIX' in close_df.columns else 0
+            df['SP500_Ret_5D'] = close_df['^GSPC'].pct_change(5) if '^GSPC' in close_df.columns else 0
+            df['TWII_Ret_5D'] = close_df['^TWII'].pct_change(5) if '^TWII' in close_df.columns else 0
+            df['Oil_Price'] = close_df['CL=F'] if 'CL=F' in close_df.columns else 0
+            df['Oil_Change_5D'] = close_df['CL=F'].pct_change(5) if 'CL=F' in close_df.columns else 0
+            df['ES_Ret_1D'] = close_df['ES=F'].pct_change(1) if 'ES=F' in close_df.columns else 0
+            df['NQ_Ret_1D'] = close_df['NQ=F'].pct_change(1) if 'NQ=F' in close_df.columns else 0
+            
+            latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
+            latest_close = float(df.iloc[-1]['Close'])
+            latest_date = df.index[-1].strftime('%Y-%m-%d')
+            
+            pred_max = float(reg_high.predict(latest_features)[0])
+            pred_min = float(reg_low.predict(latest_features)[0])
+            
+            item_res = {
+                "ticker": t,
+                "date": latest_date,
+                "latest_close": round(latest_close, 2),
+                "predicted_max_return_pct": round(pred_max * 100, 2),
+                "predicted_min_return_pct": round(pred_min * 100, 2),
+                "estimated_high_price": round(latest_close * (1 + pred_max), 2),
+                "estimated_low_price": round(latest_close * (1 + pred_min), 2)
+            }
+            results.append(item_res)
+            
+            # 更新快取
+            if prediction_cache["date"] != today_str:
+                prediction_cache["date"] = today_str
+                prediction_cache["data"] = {}
+            prediction_cache["data"][t] = item_res
+            
+        return {"predictions": results}
+        
     except Exception as e:
-        return {
-            "ticker": ticker,
-            "is_market_time": is_market_time,
-            "predictions": [{
-                "ticker": ticker,
-                "error": f"計算失敗: {str(e)}"
-            }]
-        }
+        return {"error": str(e)}
