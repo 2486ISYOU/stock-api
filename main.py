@@ -508,15 +508,8 @@ def home(request: Request, user: str = Depends(verify_session)):
                         
                         let htmlContent = '';
 
-                        // 🌟 檢查是否為台股盤中時間 (台灣時間 週一~週五 09:00 ~ 13:30)
-                        const now = new Date();
-                        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-                        const twTime = new Date(utc + (3600000 * 8));
-                        const day = twTime.getDay();
-                        const hour = twTime.getHours();
-                        const minute = twTime.getMinutes();
-                        const timeVal = hour * 100 + minute;
-                        const isMarketTime = (day >= 1 && day <= 5) && (timeVal >= 900 && timeVal <= 1330);
+                        // 🌟 【測試模式】強制設為 true，確保隨時點擊都能看到黃色提醒框
+                        const isMarketTime = true; 
 
                         if (isMarketTime) {
                             htmlContent += `
