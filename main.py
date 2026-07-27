@@ -508,17 +508,29 @@ def home(request: Request, user: str = Depends(verify_session)):
                         
                         let htmlContent = '';
 
-                        // 🌟 【測試模式】強制設為 true，確保隨時點擊都能看到黃色提醒框
-                        const isMarketTime = true; 
+                       // 依台灣時間判斷是否為台股盤中 (08:30 ~ 15:00)
+const now = new Date();
+const taiwanTime = new Date(
+    now.toLocaleString("en-US", { timeZone: "Asia/Taipei" })
+);
 
-                        if (isMarketTime) {
-                            htmlContent += `
-                                <div class="p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs text-amber-300 flex items-center gap-2 shadow">
-                                    <span>⚠️</span>
-                                    <span>台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。</span>
-                                </div>
-                            `;
-                        }
+const day = taiwanTime.getDay(); // 0=星期日、6=星期六
+const minutes = taiwanTime.getHours() * 60 + taiwanTime.getMinutes();
+
+const isMarketTime =
+    day >= 1 &&
+    day <= 5 &&
+    minutes >= (8 * 60 + 30) &&
+    minutes < (15 * 60);
+
+if (isMarketTime) {
+    htmlContent += `
+        <div class="p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs text-amber-300 flex items-center gap-2 shadow">
+            <span>⚠️</span>
+            <span>台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。</span>
+        </div>
+    `;
+}
                         
                         if (data.predictions && data.predictions.length > 0) {
                             data.predictions.forEach(item => {
