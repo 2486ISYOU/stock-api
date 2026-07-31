@@ -5,14 +5,15 @@ import joblib
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import twstock
 import warnings
 import secrets
-from datetime import datetime, time
+from datetime import datetime
 import pytz
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.8")
+app = FastAPI(title="股佳寶", version="3.0")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -111,8 +112,8 @@ def disclaimer_page(user: str = Depends(verify_session)):
                     <p>1. <strong>參考性質</strong>：本系統所產出之所有多空預測結果、趨勢分析及數據指標，僅供學術研究與內部參考之用，不構成任何形式的投資建議、買賣邀約或保證獲利承諾。</p>
                     <p>2. <strong>投資風險</strong>：金融市場瞬息萬變，歷史數據與機器學習模型無法完全預測未來突發事件。使用者須自行評估市場風險，並對自身的投資決策負全責。</p>
                     <p>3. <strong>免責範圍</strong>：開發者與本系統營運團隊不對因使用本系統數據而導致的任何直接或間接財務損失承擔法律責任。</p>
-                    <p>4. <strong>資料正確性</strong>：系統透過公開渠道（如 Yahoo Finance 等）抓取即時與歷史行情，若遇網路延遲或數據源異常，系統將不負預期中斷之責。</p>
-                    <p class="text-zinc-500 italic">【請完整捲動至最底部，方可解鎖同意按鈕（若畫面過大無法捲動將自動解鎖）】</p>
+                    <p>4. <strong>資料正確性</strong>：系統透過公開渠道（如證交所、TPEx 與 Yahoo Finance 等）抓取即時與歷史行情，若遇網路延遲或數據源異常，系統將不負預期中斷之責。</p>
+                    <p class="text-zinc-500 italic">【請完整捲動至最底部，方可解鎖同意按鈕】</p>
                 </div>
 
                 <div class="space-y-3">
@@ -171,14 +172,8 @@ def disclaimer_page(user: str = Depends(verify_session)):
                 }
 
                 box.addEventListener('scroll', checkScroll);
-
-                window.addEventListener('load', () => {
-                    setTimeout(checkScrollNeed, 100);
-                });
-
-                window.addEventListener('resize', () => {
-                    checkScrollNeed();
-                });
+                window.addEventListener('load', () => setTimeout(checkScrollNeed, 100));
+                window.addEventListener('resize', checkScrollNeed);
             </script>
         </body>
     </html>
@@ -218,7 +213,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                     </div>
                 </header>
 
-                <!-- 分頁按鈕列 -->
                 <div class="flex border-b border-zinc-800 mb-6 gap-3 sm:gap-6 overflow-x-auto pb-2 scrollbar-none">
                     <button onclick="switchTab(1)" id="tabBtn1" class="pb-2 font-semibold text-sm sm:text-lg tab-active transition cursor-pointer whitespace-nowrap">自選股 1</button>
                     <button onclick="switchTab(2)" id="tabBtn2" class="pb-2 font-semibold text-sm sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap">自選股 2</button>
@@ -227,11 +221,9 @@ def home(request: Request, user: str = Depends(verify_session)):
                     <button onclick="switchTab('selector')" id="tabBtnselector" class="pb-2 font-semibold text-sm sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap flex items-center gap-1">🌟 專業選股專區</button>
                 </div>
 
-                <!-- 分頁內容區 -->
                 <div id="contentArea"></div>
             </div>
 
-            <!-- 彈出互動視窗 Modal -->
             <div id="stockModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4">
                 <div class="bg-zinc-950 border gold-border w-full max-w-lg rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
                     <button onclick="closeModal()" class="absolute top-4 right-4 text-zinc-400 hover:text-white text-2xl font-bold cursor-pointer">&times;</button>
@@ -239,7 +231,6 @@ def home(request: Request, user: str = Depends(verify_session)):
                 </div>
             </div>
 
-            <!-- 底部名片角落 -->
             <footer class="w-full border-t border-zinc-900 py-4 px-4 sm:px-6 text-right text-xs text-zinc-500 bg-black tracking-wider mt-12">
                 開發者: 顧家寶 | 開發者信箱: <a href="mailto:jgu9410@gmail.com" class="hover:text-[#d4af37] underline">jgu9410@gmail.com</a>
             </footer>
@@ -507,34 +498,21 @@ def home(request: Request, user: str = Depends(verify_session)):
                         const data = await response.json();
                         
                         let htmlContent = '';
-
-                        // 判斷股票市場交易時間
                         const now = new Date();
                         let isMarketTime = false;
                         let warningText = "";
 
                         const stockCode = ticker.toUpperCase();
 
-                        // 台股
-                        if (stockCode.endsWith(".TW")) {
-                            const twTime = new Date(
-                                now.toLocaleString("en-US", {
-                                    timeZone: "Asia/Taipei"
-                                })
-                            );
+                        if (stockCode.endsWith(".TW") || stockCode.endsWith(".TWO")) {
+                            const twTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
                             const twDay = twTime.getDay();
                             const twMinutes = twTime.getHours() * 60 + twTime.getMinutes();
 
                             isMarketTime = twDay >= 1 && twDay <= 5 && twMinutes >= 510 && twMinutes < 900;
                             warningText = "台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。";
-                        }
-                        // 美股
-                        else {
-                            const usTime = new Date(
-                                now.toLocaleString("en-US", {
-                                    timeZone: "America/New_York"
-                                })
-                            );
+                        } else {
+                            const usTime = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
                             const usDay = usTime.getDay();
                             const usMinutes = usTime.getHours() * 60 + usTime.getMinutes();
 
@@ -657,27 +635,29 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         res = {}
         for t in ticker_list:
             try:
-                # 採用個股獨立抓取模式，確保 100% 拿未還原的真實每日收盤價
-                tk = yf.Ticker(t)
-                hist = tk.history(period="5d", auto_adjust=False)
-                
-                if not hist.empty and len(hist) >= 1:
-                    s = hist['Close'].dropna()
-                    if len(s) >= 2:
-                        curr = float(s.iloc[-1])
-                        prev = float(s.iloc[-2])
-                        change = curr - prev
-                        res[t] = {
-                            "price": round(curr, 2),
-                            "is_up": change >= 0
-                        }
-                    else:
-                        curr = float(s.iloc[-1])
-                        res[t] = {
-                            "price": round(curr, 2),
-                            "is_up": True
-                        }
+                # 台股走 twstock 抓證交所官方真實價，徹底解決 Yahoo 還原價 2205 的 Bug
+                if t.endswith(".TW") or t.endswith(".TWO"):
+                    code = t.split(".")[0]
+                    stk = twstock.Stock(code)
+                    price = stk.price[-1]
+                    prev_price = stk.price[-2] if len(stk.price) >= 2 else price
+                    change = price - prev_price
+                    res[t] = {
+                        "price": round(float(price), 2),
+                        "is_up": change >= 0
+                    }
+                else:
+                    # 美股走 yfinance
+                    tk = yf.Ticker(t)
+                    price = tk.fast_info.get('lastPrice') or tk.fast_info.get('previousClose')
+                    prev_price = tk.fast_info.get('previousClose')
+                    change = (price - prev_price) if (price and prev_price) else 0
+                    res[t] = {
+                        "price": round(float(price), 2),
+                        "is_up": change >= 0
+                    }
             except Exception as inner_e:
+                print(f"Error fetching price for {t}: {inner_e}")
                 continue
 
         return {"prices": res}
@@ -703,28 +683,37 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         if not uncached_tickers:
             return {"predictions": results}
 
+        # 批次下載總體經濟數據
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
-        
-        # 抓取總體經濟與大盤指標數據
-        macro_data = {}
-        for m in macro_tickers:
-            try:
-                m_hist = yf.Ticker(m).history(period="6mo", auto_adjust=False)
-                if not m_hist.empty:
-                    macro_data[m] = m_hist['Close']
-            except:
-                pass
+        try:
+            macro_raw = yf.download(macro_tickers, period="6mo", progress=False)['Close']
+        except Exception as m_err:
+            print(f"Macro fetch failed: {m_err}")
+            macro_raw = pd.DataFrame()
 
         for t in uncached_tickers:
             try:
                 tk = yf.Ticker(t)
-                df = tk.history(period="6mo", auto_adjust=False)
+                df = tk.history(period="6mo")
                 
                 if df.empty or len(df) < 20:
                     results.append({"ticker": t, "error": "找不到此標的歷史資料或資料不足"})
                     continue
 
-                # 確保使用真實未還原收盤價進行技術特徵運算
+                # 若為台股，使用 twstock 覆蓋最後一筆收盤價，確保以真實收盤價進行推估與顯示
+                if t.endswith(".TW") or t.endswith(".TWO"):
+                    try:
+                        code = t.split(".")[0]
+                        stk = twstock.Stock(code)
+                        real_price = stk.price[-1]
+                        df.iloc[-1, df.columns.get_loc('Close')] = float(real_price)
+                    except:
+                        pass
+                else:
+                    real_last_price = tk.fast_info.get('lastPrice')
+                    if real_last_price:
+                        df.iloc[-1, df.columns.get_loc('Close')] = real_last_price
+
                 df['Ret_1D'] = df['Close'].pct_change(1)
                 df['Ret_5D'] = df['Close'].pct_change(5)
                 df['Ret_20D'] = df['Close'].pct_change(20)
@@ -746,24 +735,28 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                                          abs(df['Low'] - df['Close'].shift(1))))
                 df['ATR_14'] = tr.rolling(14).mean() / df['Close']
                 
-                # 對齊與填補大盤總體數據
-                df['VIX_Level'] = macro_data.get('^VIX', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                def get_macro_series(sym):
+                    if not macro_raw.empty and sym in macro_raw.columns:
+                        return macro_raw[sym]
+                    return pd.Series(0, index=df.index)
+
+                df['VIX_Level'] = get_macro_series('^VIX').reindex(df.index, method='ffill').fillna(0)
                 df['VIX_Change_5D'] = df['VIX_Level'].pct_change(5).fillna(0)
                 
-                sp500 = macro_data.get('^GSPC', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                sp500 = get_macro_series('^GSPC').reindex(df.index, method='ffill').fillna(0)
                 df['SP500_Ret_5D'] = sp500.pct_change(5).fillna(0)
                 
-                twii = macro_data.get('^TWII', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                twii = get_macro_series('^TWII').reindex(df.index, method='ffill').fillna(0)
                 df['TWII_Ret_5D'] = twii.pct_change(5).fillna(0)
                 
-                oil = macro_data.get('CL=F', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                oil = get_macro_series('CL=F').reindex(df.index, method='ffill').fillna(0)
                 df['Oil_Price'] = oil
                 df['Oil_Change_5D'] = oil.pct_change(5).fillna(0)
                 
-                es = macro_data.get('ES=F', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                es = get_macro_series('ES=F').reindex(df.index, method='ffill').fillna(0)
                 df['ES_Ret_1D'] = es.pct_change(1).fillna(0)
                 
-                nq = macro_data.get('NQ=F', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                nq = get_macro_series('NQ=F').reindex(df.index, method='ffill').fillna(0)
                 df['NQ_Ret_1D'] = nq.pct_change(1).fillna(0)
                 
                 latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
@@ -790,9 +783,11 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                 prediction_cache["data"][t] = item_res
 
             except Exception as inner_e:
+                print(f"Predict inner error for {t}: {inner_e}")
                 results.append({"ticker": t, "error": f"計算失敗: {str(inner_e)}"})
             
         return {"predictions": results}
         
     except Exception as e:
+        print(f"Predict global error: {e}")
         return {"error": str(e)}
