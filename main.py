@@ -5,7 +5,6 @@ import joblib
 import numpy as np
 import pandas as pd
 import yfinance as yf
-import twstock
 import warnings
 import secrets
 from datetime import datetime
@@ -13,7 +12,7 @@ import pytz
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="3.0")
+app = FastAPI(title="股佳寶", version="3.1")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -31,7 +30,7 @@ feature_cols = [
     'ES_Ret_1D', 'NQ_Ret_1D'
 ]
 
-# 記憶體快取：儲存盤後預測結果，避免重複呼叫 API
+# 記憶體快取：儲存盤後預測結果
 prediction_cache = {
     "update_time": None,
     "date": None,
@@ -342,7 +341,11 @@ def home(request: Request, user: str = Depends(verify_session)):
                         localStorage.setItem('gubao_watchlists', JSON.stringify(initial));
                         return initial;
                     }
-                    return JSON.parse(data);
+                    try {
+                        return JSON.parse(data);
+                    } catch (e) {
+                        return { 1: [], 2: [], 3: [], 4: [] };
+                    }
                 }
 
                 function saveWatchlists(data) {
@@ -353,10 +356,12 @@ def home(request: Request, user: str = Depends(verify_session)):
                     currentTab = tabNum;
                     ['1', '2', '3', '4', 'selector'].forEach(i => {
                         const btn = document.getElementById(`tabBtn${i}`);
-                        if (i == tabNum) {
-                            btn.className = "pb-2 font-semibold text-sm sm:text-lg tab-active transition cursor-pointer whitespace-nowrap";
-                        } else {
-                            btn.className = "pb-2 font-semibold text-sm sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap";
+                        if (btn) {
+                            if (i == tabNum) {
+                                btn.className = "pb-2 font-semibold text-sm sm:text-lg tab-active transition cursor-pointer whitespace-nowrap";
+                            } else {
+                                btn.className = "pb-2 font-semibold text-sm sm:text-lg text-zinc-500 transition cursor-pointer whitespace-nowrap";
+                            }
                         }
                     });
                     renderContent();
@@ -364,6 +369,8 @@ def home(request: Request, user: str = Depends(verify_session)):
 
                 async function renderContent() {
                     const area = document.getElementById('contentArea');
+                    if (!area) return;
+
                     if (currentTab === 'selector') {
                         let html = `
                             <div class="bg-zinc-950 p-4 sm:p-6 rounded-2xl shadow-xl border gold-border space-y-6">
@@ -418,27 +425,33 @@ def home(request: Request, user: str = Depends(verify_session)):
                 async function renderStocksCards(stocks) {
                     const container = document.getElementById('stockCardsGrid');
                     if (!container) return;
-                    container.innerHTML = '';
+                    
                     if (stocks.length === 0) {
                         container.innerHTML = '<div class="col-span-full text-zinc-500 text-xs italic text-center py-10">目前尚無自選股，請透過上方輸入框新增，或至「🌟 專業選股專區」挑選加入。</div>';
                         return;
                     }
 
+                    container.innerHTML = '<div class="col-span-full text-zinc-400 text-xs text-center py-10">載入股價資料中...</div>';
+
                     let priceData = {};
                     try {
-                        const res = await fetch(`/prices/${stocks.join(',')}`);
-                        const data = await res.json();
-                        priceData = data.prices || {};
+                        const res = await fetch(`/prices/${encodeURIComponent(stocks.join(','))}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            priceData = data.prices || {};
+                        }
                     } catch (e) {
                         console.error("無法取得即時股價", e);
                     }
 
+                    container.innerHTML = '';
+
                     stocks.forEach((ticker, index) => {
                         const name = stockNameMap[ticker] || ticker;
                         const info = priceData[ticker];
-                        const price = info ? info.price : '載入中...';
+                        const price = (info && info.price !== undefined && info.price !== null) ? info.price : '--';
                         const isUp = info ? info.is_up : true;
-                        const priceColor = isUp ? 'text-rose-500' : 'text-emerald-400';
+                        const priceColor = price === '--' ? 'text-zinc-400' : (isUp ? 'text-rose-500' : 'text-emerald-400');
 
                         const card = document.createElement('div');
                         card.className = "bg-zinc-950 border gold-border p-4 rounded-xl flex flex-col justify-between hover:bg-zinc-900 transition cursor-pointer shadow-lg";
@@ -571,7 +584,7 @@ def home(request: Request, user: str = Depends(verify_session)):
                     }
 
                     let watchlists = getWatchlists();
-                    let stocks = watchlists[targetTab];
+                    let stocks = watchlists[targetTab] || [];
 
                     if (stocks.length >= 50) {
                         alert(`「自選股 ${targetTab}」已達上限 50 支！`);
@@ -590,11 +603,12 @@ def home(request: Request, user: str = Depends(verify_session)):
 
                 async function addStock() {
                     const input = document.getElementById('tickerInput');
+                    if (!input) return;
                     const ticker = input.value.trim().toUpperCase();
                     if (!ticker) return;
 
                     let watchlists = getWatchlists();
-                    let stocks = watchlists[currentTab];
+                    let stocks = watchlists[currentTab] || [];
 
                     if (stocks.length >= 50) {
                         alert('每個自選股分頁最多只能儲存 50 支股票！');
@@ -609,14 +623,16 @@ def home(request: Request, user: str = Depends(verify_session)):
                     watchlists[currentTab] = stocks;
                     saveWatchlists(watchlists);
                     input.value = '';
-                    await renderStocksCards(stocks);
+                    await renderContent();
                 }
 
                 async function removeStock(index) {
                     let watchlists = getWatchlists();
-                    watchlists[currentTab].splice(index, 1);
-                    saveWatchlists(watchlists);
-                    await renderStocksCards(watchlists[currentTab]);
+                    if (watchlists[currentTab]) {
+                        watchlists[currentTab].splice(index, 1);
+                        saveWatchlists(watchlists);
+                        await renderContent();
+                    }
                 }
 
                 renderContent();
@@ -628,28 +644,24 @@ def home(request: Request, user: str = Depends(verify_session)):
 @app.get("/prices/{tickers}")
 def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
     try:
-        ticker_list = [t.strip().upper() for t in tickers.split(",")]
-        if not ticker_list or ticker_list == ['']:
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+        if not ticker_list:
             return {"prices": {}}
         
         res = {}
+        # 批次一次性快速抓取股價
+        tickers_str = " ".join(ticker_list)
+        data = yf.Tickers(tickers_str)
+        
         for t in ticker_list:
             try:
-                if t.endswith(".TW") or t.endswith(".TWO"):
-                    code = t.split(".")[0]
-                    stk = twstock.Stock(code)
-                    price = stk.price[-1]
-                    prev_price = stk.price[-2] if len(stk.price) >= 2 else price
-                    change = price - prev_price
-                    res[t] = {
-                        "price": round(float(price), 2),
-                        "is_up": change >= 0
-                    }
-                else:
-                    tk = yf.Ticker(t)
-                    price = tk.fast_info.get('lastPrice') or tk.fast_info.get('previousClose')
-                    prev_price = tk.fast_info.get('previousClose')
-                    change = (price - prev_price) if (price and prev_price) else 0
+                tk = data.tickers.get(t) or yf.Ticker(t)
+                fast_info = tk.fast_info
+                price = fast_info.get('lastPrice') or fast_info.get('previousClose')
+                prev_price = fast_info.get('previousClose')
+                
+                if price is not None:
+                    change = (price - prev_price) if prev_price is not None else 0
                     res[t] = {
                         "price": round(float(price), 2),
                         "is_up": change >= 0
@@ -660,12 +672,13 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
 
         return {"prices": res}
     except Exception as e:
-        return {"prices": {}, "error": str(e)}
+        print(f"Global price fetch error: {e}")
+        return {"prices": {}}
 
 @app.get("/predict/{tickers}")
 def predict_stocks(tickers: str, user: str = Depends(verify_session)):
     try:
-        ticker_list = [t.strip().upper() for t in tickers.split(",")]
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
         tz = pytz.timezone('Asia/Taipei')
         today_str = datetime.now(tz).strftime('%Y-%m-%d')
 
@@ -685,7 +698,6 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
         try:
             macro_raw = yf.download(macro_tickers, period="6mo", progress=False)['Close']
-            # 安全去除時區
             if isinstance(macro_raw.index, pd.DatetimeIndex) and macro_raw.index.tz is not None:
                 macro_raw.index = macro_raw.index.tz_localize(None)
         except Exception as m_err:
@@ -701,22 +713,12 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                     results.append({"ticker": t, "error": "找不到此標的歷史資料或資料不足"})
                     continue
 
-                # 安全去除時區，確保跟 macro_raw 比對不會崩潰
                 if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
                     df.index = df.index.tz_localize(None)
 
-                if t.endswith(".TW") or t.endswith(".TWO"):
-                    try:
-                        code = t.split(".")[0]
-                        stk = twstock.Stock(code)
-                        real_price = stk.price[-1]
-                        df.iloc[-1, df.columns.get_loc('Close')] = float(real_price)
-                    except:
-                        pass
-                else:
-                    real_last_price = tk.fast_info.get('lastPrice')
-                    if real_last_price:
-                        df.iloc[-1, df.columns.get_loc('Close')] = real_last_price
+                real_last_price = tk.fast_info.get('lastPrice')
+                if real_last_price:
+                    df.iloc[-1, df.columns.get_loc('Close')] = real_last_price
 
                 df['Ret_1D'] = df['Close'].pct_change(1)
                 df['Ret_5D'] = df['Close'].pct_change(5)
