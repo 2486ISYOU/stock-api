@@ -635,7 +635,6 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         res = {}
         for t in ticker_list:
             try:
-                # 台股走 twstock 抓證交所官方真實價
                 if t.endswith(".TW") or t.endswith(".TWO"):
                     code = t.split(".")[0]
                     stk = twstock.Stock(code)
@@ -647,7 +646,6 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
                         "is_up": change >= 0
                     }
                 else:
-                    # 美股走 yfinance
                     tk = yf.Ticker(t)
                     price = tk.fast_info.get('lastPrice') or tk.fast_info.get('previousClose')
                     prev_price = tk.fast_info.get('previousClose')
@@ -687,8 +685,8 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
         try:
             macro_raw = yf.download(macro_tickers, period="6mo", progress=False)['Close']
-            # 清除時區，防止比對報錯
-            if hasattr(macro_raw.index, 'tz_localize'):
+            # 安全去除時區
+            if isinstance(macro_raw.index, pd.DatetimeIndex) and macro_raw.index.tz is not None:
                 macro_raw.index = macro_raw.index.tz_localize(None)
         except Exception as m_err:
             print(f"Macro fetch failed: {m_err}")
@@ -703,11 +701,10 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                     results.append({"ticker": t, "error": "找不到此標的歷史資料或資料不足"})
                     continue
 
-                # 關鍵防護：強制去除 df 時間 Index 的時區資訊
-                if hasattr(df.index, 'tz_localize'):
+                # 安全去除時區，確保跟 macro_raw 比對不會崩潰
+                if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
                     df.index = df.index.tz_localize(None)
 
-                # 若為台股，使用 twstock 覆蓋最後一筆收盤價，確保以真實收盤價進行推估與顯示
                 if t.endswith(".TW") or t.endswith(".TWO"):
                     try:
                         code = t.split(".")[0]
