@@ -12,7 +12,7 @@ import pytz
 
 warnings.filterwarnings('ignore')
 
-app = FastAPI(title="股佳寶", version="2.7")
+app = FastAPI(title="股佳寶", version="2.8")
 
 COOKIE_NAME = "stock_session"
 MY_SECRET_PASSWORD = "ChiaPaoKU1688940318skrskr"
@@ -654,30 +654,32 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         if not ticker_list or ticker_list == ['']:
             return {"prices": {}}
         
-        # 【修正 1】改為 auto_adjust=False，確保卡片抓取真實市場收盤價
-        data = yf.download(ticker_list, period="5d", interval="1d", auto_adjust=False, progress=False)
-        close_df = data['Close']
-        if isinstance(close_df, pd.Series):
-            close_df = close_df.to_frame(ticker_list[0])
-        
         res = {}
         for t in ticker_list:
-            if t in close_df.columns:
-                s = close_df[t].dropna()
-                if len(s) >= 2:
-                    curr = float(s.iloc[-1])
-                    prev = float(s.iloc[-2])
-                    change = curr - prev
-                    res[t] = {
-                        "price": round(curr, 2),
-                        "is_up": change >= 0
-                    }
-                elif len(s) == 1:
-                    curr = float(s.iloc[-1])
-                    res[t] = {
-                        "price": round(curr, 2),
-                        "is_up": True
-                    }
+            try:
+                # 採用個股獨立抓取模式，確保 100% 拿未還原的真實每日收盤價
+                tk = yf.Ticker(t)
+                hist = tk.history(period="5d", auto_adjust=False)
+                
+                if not hist.empty and len(hist) >= 1:
+                    s = hist['Close'].dropna()
+                    if len(s) >= 2:
+                        curr = float(s.iloc[-1])
+                        prev = float(s.iloc[-2])
+                        change = curr - prev
+                        res[t] = {
+                            "price": round(curr, 2),
+                            "is_up": change >= 0
+                        }
+                    else:
+                        curr = float(s.iloc[-1])
+                        res[t] = {
+                            "price": round(curr, 2),
+                            "is_up": True
+                        }
+            except Exception as inner_e:
+                continue
+
         return {"prices": res}
     except Exception as e:
         return {"prices": {}, "error": str(e)}
@@ -689,7 +691,6 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         tz = pytz.timezone('Asia/Taipei')
         today_str = datetime.now(tz).strftime('%Y-%m-%d')
 
-        # 檢查快取是否有該標的之今日盤後預測結果
         results = []
         uncached_tickers = []
         
@@ -702,92 +703,94 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         if not uncached_tickers:
             return {"predictions": results}
 
-        # 針對未快取的標的進行運算
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
-        all_symbols = uncached_tickers + macro_tickers
         
-        # 【修正 2】改為 auto_adjust=False，確保 AI 預測計算使用真實未還原收盤價
-        all_data = yf.download(all_symbols, period="6mo", interval="1d", auto_adjust=False, progress=False)
-        
-        def get_df_field(field_name):
-            if field_name not in all_data:
-                return pd.DataFrame()
-            df = all_data[field_name]
-            if isinstance(df, pd.Series):
-                df = df.to_frame(all_symbols[0] if len(all_symbols) == 1 else 'col')
-            return df
+        # 抓取總體經濟與大盤指標數據
+        macro_data = {}
+        for m in macro_tickers:
+            try:
+                m_hist = yf.Ticker(m).history(period="6mo", auto_adjust=False)
+                if not m_hist.empty:
+                    macro_data[m] = m_hist['Close']
+            except:
+                pass
 
-        close_df = get_df_field('Close').ffill().bfill()
-        high_df = get_df_field('High').ffill().bfill()
-        low_df = get_df_field('Low').ffill().bfill()
-        volume_df = get_df_field('Volume').ffill().bfill()
-        
         for t in uncached_tickers:
-            if t not in close_df.columns:
-                err_res = {"ticker": t, "error": "找不到此標的資料或代號有誤"}
-                results.append(err_res)
-                continue
+            try:
+                tk = yf.Ticker(t)
+                df = tk.history(period="6mo", auto_adjust=False)
                 
-            c = close_df[t]
-            h = high_df[t]
-            l = low_df[t]
-            v = volume_df[t]
-            
-            df = pd.DataFrame({'Close': c, 'High': h, 'Low': l, 'Volume': v})
-            
-            df['Ret_1D'] = df['Close'].pct_change(1)
-            df['Ret_5D'] = df['Close'].pct_change(5)
-            df['Ret_20D'] = df['Close'].pct_change(20)
-            
-            ma5 = df['Close'].rolling(5).mean()
-            ma20 = df['Close'].rolling(20).mean()
-            df['Bias_5D'] = (df['Close'] - ma5) / ma5
-            df['Bias_20D'] = (df['Close'] - ma20) / ma20
-            df['Vol_Change_5D'] = df['Volume'].pct_change(5)
-            
-            delta = df['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs = gain / (loss + 1e-9)
-            df['RSI_14'] = 100 - (100 / (1 + rs))
-            
-            tr = np.maximum(df['High'] - df['Low'], 
-                            np.maximum(abs(df['High'] - df['Close'].shift(1)), 
-                                     abs(df['Low'] - df['Close'].shift(1))))
-            df['ATR_14'] = tr.rolling(14).mean() / df['Close']
-            
-            df['VIX_Level'] = close_df['^VIX'] if '^VIX' in close_df.columns else 0
-            df['VIX_Change_5D'] = close_df['^VIX'].pct_change(5) if '^VIX' in close_df.columns else 0
-            df['SP500_Ret_5D'] = close_df['^GSPC'].pct_change(5) if '^GSPC' in close_df.columns else 0
-            df['TWII_Ret_5D'] = close_df['^TWII'].pct_change(5) if '^TWII' in close_df.columns else 0
-            df['Oil_Price'] = close_df['CL=F'] if 'CL=F' in close_df.columns else 0
-            df['Oil_Change_5D'] = close_df['CL=F'].pct_change(5) if 'CL=F' in close_df.columns else 0
-            df['ES_Ret_1D'] = close_df['ES=F'].pct_change(1) if 'ES=F' in close_df.columns else 0
-            df['NQ_Ret_1D'] = close_df['NQ=F'].pct_change(1) if 'NQ=F' in close_df.columns else 0
-            
-            latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
-            latest_close = float(df.iloc[-1]['Close'])
-            latest_date = df.index[-1].strftime('%Y-%m-%d')
-            
-            pred_max = float(reg_high.predict(latest_features)[0])
-            pred_min = float(reg_low.predict(latest_features)[0])
-            
-            item_res = {
-                "ticker": t,
-                "date": latest_date,
-                "latest_close": round(latest_close, 2),
-                "predicted_max_return_pct": round(pred_max * 100, 2),
-                "predicted_min_return_pct": round(pred_min * 100, 2),
-                "estimated_high_price": round(latest_close * (1 + pred_max), 2),
-                "estimated_low_price": round(latest_close * (1 + pred_min), 2)
-            }
-            results.append(item_res)
-            
-            # 更新快取
-            if prediction_cache["date"] != today_str:
-                prediction_cache["date"] = today_str
-                prediction_cache["data"] = {}
-            prediction_cache["data"][t] = item_res
+                if df.empty or len(df) < 20:
+                    results.append({"ticker": t, "error": "找不到此標的歷史資料或資料不足"})
+                    continue
+
+                # 確保使用真實未還原收盤價進行技術特徵運算
+                df['Ret_1D'] = df['Close'].pct_change(1)
+                df['Ret_5D'] = df['Close'].pct_change(5)
+                df['Ret_20D'] = df['Close'].pct_change(20)
+                
+                ma5 = df['Close'].rolling(5).mean()
+                ma20 = df['Close'].rolling(20).mean()
+                df['Bias_5D'] = (df['Close'] - ma5) / ma5
+                df['Bias_20D'] = (df['Close'] - ma20) / ma20
+                df['Vol_Change_5D'] = df['Volume'].pct_change(5)
+                
+                delta = df['Close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rs = gain / (loss + 1e-9)
+                df['RSI_14'] = 100 - (100 / (1 + rs))
+                
+                tr = np.maximum(df['High'] - df['Low'], 
+                                np.maximum(abs(df['High'] - df['Close'].shift(1)), 
+                                         abs(df['Low'] - df['Close'].shift(1))))
+                df['ATR_14'] = tr.rolling(14).mean() / df['Close']
+                
+                # 對齊與填補大盤總體數據
+                df['VIX_Level'] = macro_data.get('^VIX', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                df['VIX_Change_5D'] = df['VIX_Level'].pct_change(5).fillna(0)
+                
+                sp500 = macro_data.get('^GSPC', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                df['SP500_Ret_5D'] = sp500.pct_change(5).fillna(0)
+                
+                twii = macro_data.get('^TWII', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                df['TWII_Ret_5D'] = twii.pct_change(5).fillna(0)
+                
+                oil = macro_data.get('CL=F', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                df['Oil_Price'] = oil
+                df['Oil_Change_5D'] = oil.pct_change(5).fillna(0)
+                
+                es = macro_data.get('ES=F', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                df['ES_Ret_1D'] = es.pct_change(1).fillna(0)
+                
+                nq = macro_data.get('NQ=F', pd.Series(0, index=df.index)).reindex(df.index, method='ffill').fillna(0)
+                df['NQ_Ret_1D'] = nq.pct_change(1).fillna(0)
+                
+                latest_features = df[feature_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan).fillna(0)
+                latest_close = float(df.iloc[-1]['Close'])
+                latest_date = df.index[-1].strftime('%Y-%m-%d')
+                
+                pred_max = float(reg_high.predict(latest_features)[0])
+                pred_min = float(reg_low.predict(latest_features)[0])
+                
+                item_res = {
+                    "ticker": t,
+                    "date": latest_date,
+                    "latest_close": round(latest_close, 2),
+                    "predicted_max_return_pct": round(pred_max * 100, 2),
+                    "predicted_min_return_pct": round(pred_min * 100, 2),
+                    "estimated_high_price": round(latest_close * (1 + pred_max), 2),
+                    "estimated_low_price": round(latest_close * (1 + pred_min), 2)
+                }
+                results.append(item_res)
+                
+                if prediction_cache["date"] != today_str:
+                    prediction_cache["date"] = today_str
+                    prediction_cache["data"] = {}
+                prediction_cache["data"][t] = item_res
+
+            except Exception as inner_e:
+                results.append({"ticker": t, "error": f"計算失敗: {str(inner_e)}"})
             
         return {"predictions": results}
         
