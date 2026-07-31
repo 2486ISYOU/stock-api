@@ -508,86 +508,48 @@ def home(request: Request, user: str = Depends(verify_session)):
                         
                         let htmlContent = '';
 
-                       // 判斷股票市場交易時間
-const now = new Date();
+                        // 判斷股票市場交易時間
+                        const now = new Date();
+                        let isMarketTime = false;
+                        let warningText = "";
 
-let isMarketTime = false;
-let warningText = "";
+                        const stockCode = ticker.toUpperCase();
 
-const stockCode = ticker.toUpperCase();
+                        // 台股
+                        if (stockCode.endsWith(".TW")) {
+                            const twTime = new Date(
+                                now.toLocaleString("en-US", {
+                                    timeZone: "Asia/Taipei"
+                                })
+                            );
+                            const twDay = twTime.getDay();
+                            const twMinutes = twTime.getHours() * 60 + twTime.getMinutes();
 
+                            isMarketTime = twDay >= 1 && twDay <= 5 && twMinutes >= 510 && twMinutes < 900;
+                            warningText = "台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。";
+                        }
+                        // 美股
+                        else {
+                            const usTime = new Date(
+                                now.toLocaleString("en-US", {
+                                    timeZone: "America/New_York"
+                                })
+                            );
+                            const usDay = usTime.getDay();
+                            const usMinutes = usTime.getHours() * 60 + usTime.getMinutes();
 
-// =====================
-// 台股
-// =====================
-if (stockCode.endsWith(".TW")) {
+                            isMarketTime = usDay >= 1 && usDay <= 5 && usMinutes >= 570 && usMinutes < 960;
+                            warningText = "美股盤中即時數據計算中，目前顯示的是上一交易日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於美股收盤後更新。";
+                        }
 
-    const twTime = new Date(
-        now.toLocaleString("en-US", {
-            timeZone: "Asia/Taipei"
-        })
-    );
-
-    const twDay = twTime.getDay();
-    const twMinutes =
-        twTime.getHours() * 60 +
-        twTime.getMinutes();
-
-
-    isMarketTime =
-        twDay >= 1 &&
-        twDay <= 5 &&
-        twMinutes >= 510 &&   // 08:30
-        twMinutes < 900;      // 15:00
-
-
-    warningText =
-        "台股盤中即時數據計算中，目前顯示的是昨日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於每日 15:30 更新。";
-
-}
-
-
-// =====================
-// 美股
-// =====================
-else {
-
-    const usTime = new Date(
-        now.toLocaleString("en-US", {
-            timeZone: "America/New_York"
-        })
-    );
-
-
-    const usDay = usTime.getDay();
-
-    const usMinutes =
-        usTime.getHours() * 60 +
-        usTime.getMinutes();
-
-
-    isMarketTime =
-        usDay >= 1 &&
-        usDay <= 5 &&
-        usMinutes >= 570 &&   // 09:30
-        usMinutes < 960;      // 16:00
-
-
-    warningText =
-        "美股盤中即時數據計算中，目前顯示的是上一交易日收盤後的最終預測結果。盤中數據僅供參考，最新盤後預測將於美股收盤後更新。";
-
-}
-
-
-
-if (isMarketTime) {
-    htmlContent += `
-        <div class="p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs text-amber-300 flex items-center gap-2 shadow">
-            <span>⚠️</span>
-            <span>${warningText}</span>
-        </div>
-    `;
-}
+                        if (isMarketTime) {
+                            htmlContent += `
+                                <div class="p-3 bg-zinc-900 border border-amber-500/50 rounded-xl text-xs text-amber-300 flex items-center gap-2 shadow">
+                                    <span>⚠️</span>
+                                    <span>${warningText}</span>
+                                </div>
+                            `;
+                        }
                         
                         if (data.predictions && data.predictions.length > 0) {
                             data.predictions.forEach(item => {
@@ -692,7 +654,8 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         if not ticker_list or ticker_list == ['']:
             return {"prices": {}}
         
-        data = yf.download(ticker_list, period="5d", interval="1d", auto_adjust=True, progress=False)
+        # 【修正 1】改為 auto_adjust=False，確保卡片抓取真實市場收盤價
+        data = yf.download(ticker_list, period="5d", interval="1d", auto_adjust=False, progress=False)
         close_df = data['Close']
         if isinstance(close_df, pd.Series):
             close_df = close_df.to_frame(ticker_list[0])
@@ -743,7 +706,8 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
         all_symbols = uncached_tickers + macro_tickers
         
-        all_data = yf.download(all_symbols, period="6mo", interval="1d", auto_adjust=True, progress=False)
+        # 【修正 2】改為 auto_adjust=False，確保 AI 預測計算使用真實未還原收盤價
+        all_data = yf.download(all_symbols, period="6mo", interval="1d", auto_adjust=False, progress=False)
         
         def get_df_field(field_name):
             if field_name not in all_data:
