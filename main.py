@@ -635,7 +635,7 @@ def get_stock_prices(tickers: str, user: str = Depends(verify_session)):
         res = {}
         for t in ticker_list:
             try:
-                # 台股走 twstock 抓證交所官方真實價，徹底解決 Yahoo 還原價 2205 的 Bug
+                # 台股走 twstock 抓證交所官方真實價
                 if t.endswith(".TW") or t.endswith(".TWO"):
                     code = t.split(".")[0]
                     stk = twstock.Stock(code)
@@ -687,6 +687,9 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
         macro_tickers = ['^VIX', '^GSPC', '^TWII', 'CL=F', 'ES=F', 'NQ=F']
         try:
             macro_raw = yf.download(macro_tickers, period="6mo", progress=False)['Close']
+            # 清除時區，防止比對報錯
+            if hasattr(macro_raw.index, 'tz_localize'):
+                macro_raw.index = macro_raw.index.tz_localize(None)
         except Exception as m_err:
             print(f"Macro fetch failed: {m_err}")
             macro_raw = pd.DataFrame()
@@ -699,6 +702,10 @@ def predict_stocks(tickers: str, user: str = Depends(verify_session)):
                 if df.empty or len(df) < 20:
                     results.append({"ticker": t, "error": "找不到此標的歷史資料或資料不足"})
                     continue
+
+                # 關鍵防護：強制去除 df 時間 Index 的時區資訊
+                if hasattr(df.index, 'tz_localize'):
+                    df.index = df.index.tz_localize(None)
 
                 # 若為台股，使用 twstock 覆蓋最後一筆收盤價，確保以真實收盤價進行推估與顯示
                 if t.endswith(".TW") or t.endswith(".TWO"):
